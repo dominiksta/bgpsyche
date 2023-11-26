@@ -1,6 +1,6 @@
 import subprocess
 import distutils.spawn
-from caching.json import JSONFileCache
+from bgpsyche.caching.json import JSONFileCache
 
 def whois_raw(query: str) -> str:
     if not distutils.spawn.find_executable("whois"):

@@ -3,9 +3,9 @@ import typing as t
 from datetime import datetime
 from pathlib import Path
 
-from service import mrt_file_parser
-from util.const import DATA_DIR
-from util.net import download_file_cached
+from bgpsyche.service import mrt_file_parser
+from bgpsyche.util.const import DATA_DIR
+from bgpsyche.util.net import download_file_cached
 
 _RIS_BASE_URL = 'https://data.ris.ripe.net/'
 _DATA_DIR = DATA_DIR / 'mrt_ris'

@@ -1,7 +1,7 @@
 import pickle
 import typing as t
 
-import caching.base as base
+import bgpsyche.caching.base as base
 
 _T = t.TypeVar('_T')
 

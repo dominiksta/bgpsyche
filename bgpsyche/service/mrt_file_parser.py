@@ -4,16 +4,16 @@ import os
 import sqlite3
 import typing as t
 from pathlib import Path
+import logging
 
 import pybgpkit_parser as bgpkit
-from log import get_logger
-from util.benchmark import Progress
-from util.bgp.path_prepending \
+from bgpsyche.util.benchmark import Progress
+from bgpsyche.util.bgp.path_prepending \
     import eliminate_path_prepending as _eliminate_path_prepending
-from util.ds import str_to_set
-from util.net.typ import IPNetwork
+from bgpsyche.util.ds import str_to_set
+from bgpsyche.util.net.typ import IPNetwork
 
-_LOG = get_logger(__name__)
+_LOG = logging.getLogger(__name__)
 
 _TABLE_META = 'mrt_raw_meta'
 _TABLE_DATA = 'mrt_raw_data'

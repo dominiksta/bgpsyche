@@ -5,8 +5,8 @@ import typing as t
 from abc import ABCMeta, abstractmethod
 import logging
 
-from caching.json_encoder import JSONDatetimeDecoder, JSONDatetimeEncoder
-from util.const import DATA_DIR
+from bgpsyche.caching.json_encoder import JSONDatetimeDecoder, JSONDatetimeEncoder
+from bgpsyche.util.const import DATA_DIR
 
 _T = t.TypeVar('_T')
 _LOG = logging.getLogger('caching')

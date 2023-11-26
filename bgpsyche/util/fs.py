@@ -5,7 +5,7 @@ import json
 import gzip
 import logging
 
-from util.const import DATA_DIR
+from bgpsyche.util.const import DATA_DIR
 
 _T = t.TypeVar("_T")
 _LOG = logging.getLogger(__name__)

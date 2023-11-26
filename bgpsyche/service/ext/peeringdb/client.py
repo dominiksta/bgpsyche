@@ -2,16 +2,16 @@ import typing as t
 import urllib3
 from urllib3.connection import HTTPException
 from urllib3.response import BaseHTTPResponse
+import logging
 
-from caching.json import JSONFileCache
-from const import ENV
-from log import get_logger
+from bgpsyche.caching.json import JSONFileCache
+from bgpsyche.util.const import ENV
 from .types import Network
 
 _API_BASE_URL = 'https://www.peeringdb.com/api'
 
 _T = t.TypeVar('_T')
-_LOG = get_logger(__name__)
+_LOG = logging.getLogger(__name__)
 
 def _req_peeringdb(
         method: str, path: str,
@@ -28,7 +28,7 @@ def _req_peeringdb(
         retries=3, timeout=60,
         headers={
             **headers,
-            'Authorization': 'Api-Key ' + ENV['general']['api_key'],
+            'Authorization': 'Api-Key ' + ENV['peeringdb']['api_key'],
             'Content-Type': 'application/json',
         }
     )

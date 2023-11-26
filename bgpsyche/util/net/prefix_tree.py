@@ -1,7 +1,7 @@
 import typing as t
 from ipaddress import ip_address, ip_network
 
-from util.net import IPAddress, IPNetwork
+from bgpsyche.util.net import IPAddress, IPNetwork
 
 def _ip2bin(ip: IPAddress) -> str: return '{:032b}'.format(int(ip))
 # def _bin2ip(bin: str) -> IPAddress: return ip_address(int(bin, 2))

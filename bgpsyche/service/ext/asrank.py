@@ -1,14 +1,14 @@
 import logging
 import typing as t
 import functools
+import logging
 
-from log import get_logger
-from caching.json import JSONFileCache
+from bgpsyche.caching.json import JSONFileCache
 from gql import gql as _gql
 import gql
 import gql.transport.requests
 
-_LOG = get_logger(__name__)
+_LOG = logging.getLogger(__name__)
 gql.transport.requests.log.setLevel(logging.WARNING)
 
 def _req_asrank(query: str) -> t.Any:

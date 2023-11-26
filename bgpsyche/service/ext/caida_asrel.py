@@ -5,12 +5,12 @@ from datetime import datetime
 import logging
 from pathlib import Path
 
-from util.bgp.relationship import (
+from bgpsyche.util.bgp.relationship import (
     Relationship, RelationshipKind, Source2Sink2Rel, relationship_reverse
 )
-from util.bgp.tier1 import TIER1_SIBLINGS_FLAT
-from util.const import DATA_DIR
-from util.net import download_file_cached
+from bgpsyche.util.bgp.tier1 import TIER1_SIBLINGS_FLAT
+from bgpsyche.util.const import DATA_DIR
+from bgpsyche.util.net import download_file_cached
 
 _LOG = logging.getLogger(__name__)
 

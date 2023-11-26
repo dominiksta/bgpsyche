@@ -1,8 +1,8 @@
 import typing as t
 import functools
 
-from util.const import HERE
-from util.net import download_file_cached
+from bgpsyche.util.const import HERE
+from bgpsyche.util.net import download_file_cached
 
 CountryUnknown = t.Literal['UNKNOWN']
 

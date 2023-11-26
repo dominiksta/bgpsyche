@@ -1,19 +1,10 @@
-from collections import defaultdict
-from datetime import datetime, timedelta
-import functools
-import itertools
-import copy
+from datetime import datetime
 import logging
-import multiprocessing
-from pprint import pformat
 import typing as t
 
-from caching.pickle import PickleFileCache
-from service.mrt_file_parser import ASPathMeta
-from service.ext import ripe_ris
-from util.net import Traceroute, NetworkPrefixTree
-from util.benchmark import Progress, bench_function
-import log
+from bgpsyche.caching.pickle import PickleFileCache
+from bgpsyche.service.mrt_file_parser import ASPathMeta
+from bgpsyche.service.ext import ripe_ris
 
 _LOG = logging.getLogger(__name__)
 
@@ -81,19 +72,6 @@ def get_as_path_confidence(
     if len(confidence_path) == 0: return 0
     return sum(confidence_path)/len(confidence_path)
 
-
-def merge_bgp_markov_chains(
-        a: BGPMarkovChainsPerDest, b: BGPMarkovChainsPerDest
-) -> BGPMarkovChainsPerDest:
-    ret = copy.deepcopy(a)
-    for as_dst, src2dst2count in b.items():
-        for src, dst2count in src2dst2count.items():
-            for dst, count in dst2count.items():
-                if as_dst not in ret: ret[as_dst] = {}
-                if src not in ret[as_dst]: ret[as_dst][src] = {}
-                if dst not in ret[as_dst][src]: ret[as_dst][src][dst] = 0
-                ret[as_dst][src][dst] += count
-    return ret
 
 # from bgp
 # ----------------------------------------------------------------------

@@ -3,7 +3,7 @@ import os.path
 import sqlite3
 import typing as t
 
-from util.const import DATA_DIR
+from bgpsyche.util.const import DATA_DIR
 
 def _get_sqlite3_thread_safety():
 

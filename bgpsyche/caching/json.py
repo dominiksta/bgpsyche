@@ -1,7 +1,7 @@
 import json
 import typing as t
 
-import caching.base as base
+import bgpsyche.caching.base as base
 
 JSONSerializable = t.TypeVar(
     'JSONSerializable',

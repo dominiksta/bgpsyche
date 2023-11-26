@@ -3,7 +3,7 @@ from collections import defaultdict
 from functools import reduce
 from itertools import permutations
 
-from util.bgp.relationship import Source2Sink2Rel
+from bgpsyche.util.bgp.relationship import Source2Sink2Rel
 
 # manually determined
 TIER1 = {

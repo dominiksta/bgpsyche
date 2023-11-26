@@ -1,8 +1,8 @@
 import typing as t
 import xml.etree.ElementTree
 
-from util.const import DATA_DIR
-from util.net import download_file_cached
+from bgpsyche.util.const import DATA_DIR
+from bgpsyche.util.net import download_file_cached
 
 _iana_invalid_ranges: t.List[t.Tuple[int, int]] = []
 def asn_is_iana_assigned(asn: int) -> bool:
