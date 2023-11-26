@@ -1,0 +1,70 @@
+import logging
+import typing as t
+import functools
+
+from log import get_logger
+from caching.json import JSONFileCache
+from gql import gql as _gql
+import gql
+import gql.transport.requests
+
+_LOG = get_logger(__name__)
+gql.transport.requests.log.setLevel(logging.WARNING)
+
+def _req_asrank(query: str) -> t.Any:
+    @functools.lru_cache()
+    def get_client():
+        transport = gql.transport.requests.RequestsHTTPTransport(
+            url='https://api.asrank.caida.org/v2/graphql'
+        )
+        return gql.Client(transport=transport, fetch_schema_from_transport=True)
+
+    return get_client().execute(_gql(query))
+
+
+class ASRank(t.TypedDict):
+    sorted: t.List[int]
+    by_asn: t.Dict[int, int]
+
+@functools.lru_cache()
+def get_asrank_full() -> ASRank:
+    out: ASRank = { 'by_asn': {}, 'sorted': [] }
+    batch_size = 5_000
+    has_next, current_offset = True, 0
+    while has_next:
+        _LOG.info(
+            f'Getting ASRank offset {current_offset}, batch_size {batch_size}'
+        )
+        resp = JSONFileCache(
+            f'asrank_first_{batch_size}_offset_{current_offset}',
+            lambda: _req_asrank("""{
+              asns(first: %d, offset: %d, sort: "+rank") {
+                pageInfo {
+                  first,
+                  offset,
+                  hasNextPage,
+                },
+                edges {
+                  node {
+                    asn
+                  }
+                }
+              }
+            }""" % (batch_size, current_offset))
+        ).get()
+        asns = [ int(el['node']['asn']) for el in resp['asns']['edges'] ]
+
+        for i in range(0, len(asns)):
+            out['sorted'].append(asns[i])
+            out['by_asn'][asns[i]] = current_offset + i + 1
+
+        has_next = resp['asns']['pageInfo']['hasNextPage']
+        current_offset += batch_size
+
+    assert len(out['sorted']) > 100_000
+    return out
+
+
+def get_asrank(asn: int) -> int:
+    asrank = get_asrank_full()
+    return asrank['by_asn'][asn] if asn in asrank['by_asn'] else -1
