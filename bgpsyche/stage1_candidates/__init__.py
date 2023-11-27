@@ -1,1 +1,1 @@
-from bgpsyche.service.bgp_markov_chain import bgp_markov_chains_from_mrt_dumps
+from .get_candidates import get_path_candidates, flatten_candidates

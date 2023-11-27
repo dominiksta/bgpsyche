@@ -41,7 +41,7 @@ class BgpElem(t.TypedDict):
 def iter_mrt_file_raw(
         file: Path,
 ) -> t.Iterator[BgpElem]:
-    parser = t.cast(t.Iterable[BgpElem], bgpkit.Parser(str(file)))
+    parser = t.cast(t.Iterable[BgpElem], bgpkit.Parser(str(file))) # type: ignore
     _LOG.info(f'Now parsing {file.name}')
     iter = 0
     for elem in parser:

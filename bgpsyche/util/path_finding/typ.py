@@ -1,4 +1,5 @@
 import typing as t
 
-GraphWithCost = t.Dict[int, t.Dict[int, int]]
-Path = t.List[int]
+_T = t.TypeVar('_T', bound=t.Hashable)
+
+Graph = t.Dict[_T, t.Set[_T]]

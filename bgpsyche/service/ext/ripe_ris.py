@@ -1,4 +1,5 @@
 import itertools
+import logging
 import typing as t
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,8 @@ from bgpsyche.util.net import download_file_cached
 
 _RIS_BASE_URL = 'https://data.ris.ripe.net/'
 _DATA_DIR = DATA_DIR / 'mrt_ris'
+
+_LOG = logging.getLogger(__name__)
 
 def download_single_full_table(
         date: datetime, out_dir: Path, collector: str
@@ -54,6 +57,7 @@ def iter_paths(
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
 ) -> t.Iterator[mrt_file_parser.ASPathMeta]:
+    _LOG.info('Starting to loop over RIPE RIS paths')
     return mrt_file_parser.iter_paths(
         sqlite_file=_DATA_DIR / 'db' / f'{dt.strftime("%Y-%m-%dT%H%M")}.sqlite3',
         mrt_files=download_all_full_tables(dt, _DATA_DIR),
