@@ -1,10 +1,4 @@
 import typing as t
-import functools
-
-from bgpsyche.util.const import HERE
-from bgpsyche.util.net import download_file_cached
-
-CountryUnknown = t.Literal['UNKNOWN']
 
 CountryName = t.Literal[
     # "normal" valid alpha 2 country codes
@@ -46,43 +40,3 @@ CountryName = t.Literal[
 ]
 
 COUNTRIES: t.Set[str] = set(t.get_args(CountryName))
-
-
-class ASBasicInfo(t.TypedDict):
-    name: str
-    country: CountryName
-
-
-@functools.lru_cache()
-def get_all_asn_basic_info() -> t.Mapping[int, ASBasicInfo]:
-    asn_name_cc_file = download_file_cached(
-        'https://ftp.ripe.net/ripe/asnames/asn.txt',
-        HERE / 'data' / 'asn.txt',
-    )
-    # we could save this all in a database, but since the file is just ~4MB,
-    # keeping this in memory is likely not an issue but much fast
-
-    count_as_unknown = {
-        'AP', # African Regional Intellectual Property Organization,
-        'ZZ',
-    }
-
-    out: t.Dict[int, ASBasicInfo] = {}
-    with open(asn_name_cc_file, 'r') as f:
-        for line in f:
-            if line.startswith('23456 AS_TRANS'): continue
-            last_comma, first_space = line.rfind(','), line.find(' ')
-            country = t.cast(CountryName, line[last_comma+2:-1])
-            if country in count_as_unknown: country = 'UNKNOWN'
-            assert country in COUNTRIES, f'{country} not in {COUNTRIES}'
-            asn = int(line[:first_space])
-            name = line[first_space+1:last_comma]
-            out[asn] = { 'name': name, 'country': country }
-
-    return out
-
-
-def get_asn_basic_info(asn: int) -> ASBasicInfo:
-    all = get_all_asn_basic_info()
-    return all[asn] if asn in all \
-        else { 'name': 'UNKNOWN', 'country': 'UNKNOWN' }
