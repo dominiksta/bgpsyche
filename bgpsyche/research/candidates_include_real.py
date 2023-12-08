@@ -82,7 +82,7 @@ def _research_candidates_include_real():
 
     percent = round((included / iter) * 100, 2)
     _LOG.warning(f'All Done: {percent}')
-    queue.put('stop')
+    # queue.put('stop')
             
 
 

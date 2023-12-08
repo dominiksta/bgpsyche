@@ -1,3 +1,4 @@
+from datetime import datetime
 from ipaddress import ip_network
 import multiprocessing
 import os
@@ -5,11 +6,13 @@ import sqlite3
 import typing as t
 from pathlib import Path
 import logging
+from hashlib import sha256
 
 import pybgpkit_parser as bgpkit
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.bgp.path_prepending \
     import eliminate_path_prepending as _eliminate_path_prepending
+from bgpsyche.util.const import HERE
 from bgpsyche.util.ds import str_to_set
 from bgpsyche.util.net.typ import IPNetwork
 
@@ -17,6 +20,8 @@ _LOG = logging.getLogger(__name__)
 
 _TABLE_META = 'mrt_raw_meta'
 _TABLE_DATA = 'mrt_raw_data'
+
+_CACHE_DIR = HERE / 'data' / 'mrt_cache'
 
 class BgpElem(t.TypedDict):
     """from bgpkit"""
@@ -202,35 +207,46 @@ class ASPathMetaWithOrigin(ASPathMeta):
 
 @t.overload
 def iter_paths(
-        sqlite_file: Path,
         mrt_files: t.List[Path],
         include_origin: t.Literal[False],
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
+        sqlite_cache_file_prefix = '',
 ) -> t.Iterator[ASPathMeta]: pass
 
 @t.overload
 def iter_paths(
-        sqlite_file: Path,
         mrt_files: t.List[Path],
         include_origin: t.Literal[True],
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
+        sqlite_cache_file_prefix = '',
 ) -> t.Iterator[ASPathMetaWithOrigin]: pass
 
 def iter_paths(
-        sqlite_file: Path,
         mrt_files: t.List[Path],
         include_origin: bool = False,
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
+        sqlite_cache_file_prefix = '',
 ) -> t.Union[
     t.Iterator[ASPathMetaWithOrigin],
     t.Iterator[ASPathMeta],
 ]:
+    sqlite_id = sha256(
+        ';;'.join([ str(p.absolute()) for p in mrt_files ]).encode('UTF-8')
+    ).hexdigest()
+
+    sqlite_date_prefix = datetime.now().strftime('%Y%m')
+
+    sqlite_file = _CACHE_DIR \
+        / f'{sqlite_cache_file_prefix}_{sqlite_date_prefix}_{sqlite_id}.sqlite3'
+
+    _LOG.info(f'Preparting to loop over paths: {sqlite_file.name}')
+
     if not _check_sqlite(sqlite_file, mrt_files):
         _LOG.info(f'DB {sqlite_file.name} "cache miss" for MRT files')
         _prepare_sqlite(sqlite_file, mrt_files)
@@ -248,9 +264,10 @@ def iter_paths(
     with sqlite3.connect(sqlite_file, timeout=120) as tx:
         # not exact for the grouping query, but good enough and much faster
         tbl_size = tx.execute(
-            f'SELECT COUNT(*) FROM {_TABLE_DATA}'
+            f'SELECT COUNT({"*" if include_origin else "DISTINCT as_path"}) ' +
+            f'FROM {_TABLE_DATA}'
         ).fetchone()[0]
-        assert tbl_size >= 100_000
+        assert tbl_size >= 10_000
 
         iter = 0
         for row in tx.execute(query):

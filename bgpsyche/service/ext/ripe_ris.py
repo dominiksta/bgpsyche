@@ -53,16 +53,16 @@ def iter_raw(dt: datetime) -> t.Iterator[mrt_file_parser.BgpElem]:
 
 def iter_paths(
         dt: datetime,
+        collectors: t.List[str] = ACTIVE_COLLECTORS,
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
 ) -> t.Iterator[mrt_file_parser.ASPathMeta]:
-    _LOG.info('Starting to loop over RIPE RIS paths')
     return mrt_file_parser.iter_paths(
-        sqlite_file=_DATA_DIR / 'db' / f'{dt.strftime("%Y-%m-%dT%H%M")}.sqlite3',
-        mrt_files=download_all_full_tables(dt, _DATA_DIR),
+        mrt_files=download_all_full_tables(dt, _DATA_DIR, collectors),
         include_origin=False,
         filter_sinks=filter_sinks,
         filter_sources=filter_sources,
         eliminate_path_prepending=eliminate_path_prepending,
+        sqlite_cache_file_prefix='ripe_ris',
     )

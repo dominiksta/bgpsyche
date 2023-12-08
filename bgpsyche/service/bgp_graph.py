@@ -52,4 +52,5 @@ def bgp_graph_to_networkx(as_graph: ASGraphCounted) -> nx.DiGraph:
     for as_source, sink2count in as_graph.items():
         for as_sink in sink2count.keys():
             g.add_edge(as_source, as_sink)
+    _LOG.info(f'Got BGP Graph with {g.number_of_nodes()} nodes')
     return g

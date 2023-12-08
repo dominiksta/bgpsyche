@@ -76,10 +76,10 @@ def iter_paths(
         eliminate_path_prepending: bool = False,
 ) -> t.Iterator[mrt_file_parser.ASPathMeta]:
     return mrt_file_parser.iter_paths(
-        sqlite_file=_DATA_DIR / 'db' / f'{dt.strftime("%Y-%m-%dT%H%M")}.sqlite3',
         mrt_files=download_all_full_tables(dt, _DATA_DIR, collectors),
         include_origin=False,
         filter_sinks=filter_sinks,
         filter_sources=filter_sources,
         eliminate_path_prepending=eliminate_path_prepending,
+        sqlite_cache_file_prefix='routeviews',
     )
