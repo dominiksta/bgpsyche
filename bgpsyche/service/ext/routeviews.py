@@ -77,7 +77,6 @@ def iter_paths(
 ) -> t.Iterator[mrt_file_parser.ASPathMeta]:
     return mrt_file_parser.iter_paths(
         mrt_files=download_all_full_tables(dt, _DATA_DIR, collectors),
-        include_origin=False,
         filter_sinks=filter_sinks,
         filter_sources=filter_sources,
         eliminate_path_prepending=eliminate_path_prepending,

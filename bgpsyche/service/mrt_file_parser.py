@@ -8,7 +8,7 @@ from pathlib import Path
 import logging
 from hashlib import sha256
 
-import pybgpkit_parser as bgpkit
+import pybgpkit_parser as bgpkit # type: ignore
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.bgp.path_prepending \
     import eliminate_path_prepending as _eliminate_path_prepending
@@ -51,7 +51,7 @@ def iter_mrt_file_raw(
     iter = 0
     for elem in parser:
         iter += 1
-        if iter % 100000 == 0: _LOG.info(f'{file.name}: Parsed {iter} routes')
+        if iter % 100_000 == 0: _LOG.info(f'{file.name}: Parsed {iter} routes')
         assert elem['elem_type'] == 'A'
         yield elem
 
@@ -129,10 +129,9 @@ def _prepare_sqlite(
                 as_source   INTEGER NOT NULL,
                 as_sink     INTEGER NOT NULL,
                 as_path     TEXT NOT NULL,
-                origin      TEXT NOT NULL,
                 prefix      TEXT NOT NULL,
                 count       INTEGER NOT NULL DEFAULT 1,
-                PRIMARY KEY(as_path, origin, prefix)
+                PRIMARY KEY(as_path, prefix)
           );
 
           -- CREATE INDEX IF NOT EXISTS i_{_TABLE_DATA}_source
@@ -200,15 +199,16 @@ def _check_sqlite(
 class ASPathMeta(t.TypedDict):
     count: int
     path: t.List[int]
-    dst_prefix: IPNetwork
 
-class ASPathMetaWithOrigin(ASPathMeta):
-    origin: str
+class ASPathMetaWithPrefix(t.TypedDict):
+    count: int
+    path: t.List[int]
+    dst_prefix: IPNetwork
 
 @t.overload
 def iter_paths(
         mrt_files: t.List[Path],
-        include_origin: t.Literal[False],
+        distinct_paths: t.Literal[True] = True,
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
@@ -218,23 +218,23 @@ def iter_paths(
 @t.overload
 def iter_paths(
         mrt_files: t.List[Path],
-        include_origin: t.Literal[True],
+        distinct_paths: t.Literal[False],
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
         sqlite_cache_file_prefix = '',
-) -> t.Iterator[ASPathMetaWithOrigin]: pass
+) -> t.Iterator[ASPathMetaWithPrefix]: pass
 
 def iter_paths(
         mrt_files: t.List[Path],
-        include_origin: bool = False,
+        distinct_paths: bool = True,
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
         eliminate_path_prepending: bool = False,
         sqlite_cache_file_prefix = '',
 ) -> t.Union[
-    t.Iterator[ASPathMetaWithOrigin],
     t.Iterator[ASPathMeta],
+    t.Iterator[ASPathMetaWithPrefix],
 ]:
     sqlite_id = sha256(
         ';;'.join([ str(p.absolute()) for p in mrt_files ]).encode('UTF-8')
@@ -252,11 +252,15 @@ def iter_paths(
         _prepare_sqlite(sqlite_file, mrt_files)
 
     query = {
-        True  : f'SELECT as_path, count, prefix, origin FROM {_TABLE_DATA}',
-        False :
-            f'SELECT as_path, SUM(count), prefix ' +
+        True  :
+            f'SELECT as_path, count ' +
             f' FROM {_TABLE_DATA} GROUP BY as_path',
-    }[include_origin]
+        False :
+            f'SELECT as_path, count, prefix ' +
+            f' FROM {_TABLE_DATA}',
+    }[distinct_paths]
+
+    _LOG.info(f'Running Query: {query}')
 
     filter_sources = t.cast(t.Set[int], filter_sources) # shut up mypy
     filter_sinks = t.cast(t.Set[int], filter_sinks)
@@ -264,7 +268,7 @@ def iter_paths(
     with sqlite3.connect(sqlite_file, timeout=120) as tx:
         # not exact for the grouping query, but good enough and much faster
         tbl_size = tx.execute(
-            f'SELECT COUNT({"*" if include_origin else "DISTINCT as_path"}) ' +
+            f'SELECT COUNT({"DISTINCT as_path" if distinct_paths else "*"}) ' +
             f'FROM {_TABLE_DATA}'
         ).fetchone()[0]
         assert tbl_size >= 10_000
@@ -276,7 +280,6 @@ def iter_paths(
                 path_str = _eliminate_path_prepending(path_str)
             path_int: t.List[int]   = list(map(int, path_str.split(' ')))
             count: int              = row[1]
-            prefix: IPNetwork       = ip_network(row[2])
 
             iter += 1
             if iter % 100_000 == 0:
@@ -290,17 +293,14 @@ def iter_paths(
             if filter_sinks is not None \
                and path_int[-1] not in filter_sinks: continue
 
-            if include_origin:
-                origin: str = row[3]
+            if distinct_paths:
                 yield {
                     'path': path_int,
                     'count': count,
-                    'dst_prefix': prefix,
-                    'origin': origin,
                 }
             else:
                 yield {
                     'path': path_int,
                     'count': count,
-                    'dst_prefix': prefix,
+                    'dst_prefix': ip_network(row[2]),
                 }

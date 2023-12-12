@@ -1,9 +1,15 @@
+from pprint import pformat
 import typing as t
-from ipaddress import ip_address, ip_network
+from ipaddress import (
+    IPv4Address, IPv4Network,
+    IPv6Address, IPv6Network,
+)
 
 from bgpsyche.util.net import IPAddress, IPNetwork
 
-def _ip2bin(ip: IPAddress) -> str: return '{:032b}'.format(int(ip))
+def _ip2bin(ip: IPAddress) -> str:
+    if ip.version == 4: return '{:032b}'.format(int(ip))
+    else: return '{:0128b}'.format(int(ip))
 # def _bin2ip(bin: str) -> IPAddress: return ip_address(int(bin, 2))
 
 _T = t.TypeVar('_T')
@@ -31,7 +37,7 @@ class _PrefixTreeNode(t.Generic[_HashableT, _T]):
         return key in self.__children
 
 
-class NetworkPrefixTree:
+class _NetworkPrefixTree:
     """A datastructure to search for an IP in a set of prefixes.
 
     This is essentially a "Patricia Trie" or "Prefix Tree".
@@ -45,13 +51,17 @@ class NetworkPrefixTree:
 
     def __init__(self) -> None:
         self.root = _PrefixTreeNode('')
-        self.__count = 0
+        self.__networks: t.Set[IPNetwork] = set()
+
 
     def insert(self, net: IPNetwork):
-        self.__count += 1
+        if net in self.__networks: return
+        self.__networks.add(net)
         addr = _ip2bin(net.network_address)
 
-        assert len(addr) == 32, net
+        assert len(addr) == 32 or len(addr) == 128, pformat({
+            'net': net, 'bin': addr
+        })
         node = self.root
         for i in range(net.prefixlen):
             char = addr[i]
@@ -73,36 +83,64 @@ class NetworkPrefixTree:
             node = node.get_child(char)
 
 
+    @property
+    def networks(self) -> t.Set[IPNetwork]:
+        return self.__networks
+
+
     def __repr__(self) -> str:
-        return f'<NetworkPrefixTree size={self.__count}>'
+        return f'<{self.__class__} size={len(self.__networks)}>'
 
 
     @staticmethod
-    def from_list(nets: t.Iterable[IPNetwork]) -> 'NetworkPrefixTree':
-        t = NetworkPrefixTree()
+    def from_list(nets: t.Iterable[IPNetwork]) -> '_NetworkPrefixTree':
+        t = _NetworkPrefixTree()
+        for net in nets: t.insert(net)
+        return t
+
+
+class NetworkPrefixTreeV4(_NetworkPrefixTree):
+    def insert(self, net: IPv4Network): return super().insert(net)
+    def search(self, addr: IPv4Address) -> t.Optional[IPv4Network]:
+        return t.cast(IPv4Network, super().search(addr))
+
+    @staticmethod
+    def from_list(nets: t.Iterable[IPv4Network]) -> 'NetworkPrefixTreeV4':
+        t = NetworkPrefixTreeV4()
+        for net in nets: t.insert(net)
+        return t
+
+class NetworkPrefixTreeV6(_NetworkPrefixTree):
+    def insert(self, net: IPv6Network): return super().insert(net)
+    def search(self, addr: IPv6Address) -> t.Optional[IPv6Network]:
+        return t.cast(IPv6Network, super().search(addr))
+
+    @staticmethod
+    def from_list(nets: t.Iterable[IPv6Network]) -> 'NetworkPrefixTreeV6':
+        t = NetworkPrefixTreeV6()
         for net in nets: t.insert(net)
         return t
 
 
 def _test():
 
-    tree = NetworkPrefixTree()
+    tree = NetworkPrefixTreeV4()
 
-    net1 = ip_network('192.168.178.0/24')
+    net1 = IPv4Network('192.168.178.0/24')
     tree.insert(net1)
-    assert tree.search(ip_address('192.168.178.0')) == net1
-    assert tree.search(ip_address('192.168.178.20')) == net1
-    assert tree.search(ip_address('192.168.177.0')) is None
+    assert tree.search(IPv4Address('192.168.178.0')) == net1
+    assert tree.search(IPv4Address('192.168.178.20')) == net1
+    assert tree.search(IPv4Address('192.168.177.0')) is None
 
-    net2 = ip_network('192.168.178.0/28')
+    net2 = IPv4Network('192.168.178.0/28')
     tree.insert(net2)
-    assert tree.search(ip_address('192.168.178.0')) == net1
+    assert tree.search(IPv4Address('192.168.178.0')) == net1
 
-    net3 = ip_network('192.168.0.0/22')
+    net3 = IPv4Network('192.168.0.0/22')
     tree.insert(net3)
-    assert tree.search(ip_address('192.168.3.0')) == net3
-    assert tree.search(ip_address('192.168.4.0')) is None
-    assert tree.search(ip_address('192.168.178.0')) == net1
+    assert tree.search(IPv4Address('192.168.3.0')) == net3
+    assert tree.search(IPv4Address('192.168.4.0')) is None
+    assert tree.search(IPv4Address('192.168.178.0')) == net1
 
     print(tree)
 

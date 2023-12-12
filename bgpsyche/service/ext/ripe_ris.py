@@ -51,6 +51,23 @@ def iter_raw(dt: datetime) -> t.Iterator[mrt_file_parser.BgpElem]:
     ])
 
 
+
+def iter_paths_with_prefix(
+        dt: datetime,
+        collectors: t.List[str] = ACTIVE_COLLECTORS,
+        filter_sources: t.Optional[t.Set[int]] = None,
+        filter_sinks: t.Optional[t.Set[int]] = None,
+        eliminate_path_prepending: bool = False,
+) -> t.Iterator[mrt_file_parser.ASPathMetaWithPrefix]:
+    return mrt_file_parser.iter_paths(
+        mrt_files=download_all_full_tables(dt, _DATA_DIR, collectors),
+        distinct_paths=False,
+        filter_sinks=filter_sinks,
+        filter_sources=filter_sources,
+        eliminate_path_prepending=eliminate_path_prepending,
+        sqlite_cache_file_prefix='ripe_ris',
+    )
+
 def iter_paths(
         dt: datetime,
         collectors: t.List[str] = ACTIVE_COLLECTORS,
@@ -60,7 +77,6 @@ def iter_paths(
 ) -> t.Iterator[mrt_file_parser.ASPathMeta]:
     return mrt_file_parser.iter_paths(
         mrt_files=download_all_full_tables(dt, _DATA_DIR, collectors),
-        include_origin=False,
         filter_sinks=filter_sinks,
         filter_sources=filter_sources,
         eliminate_path_prepending=eliminate_path_prepending,
