@@ -1,19 +1,23 @@
 import multiprocessing
+import json
 import typing as t
 from datetime import datetime
 import logging
+import statistics
 
 import numpy as np
 import bgpsyche.logging_config
 from bgpsyche.stage1_candidates import get_path_candidates, flatten_candidates
 from bgpsyche.service.ext import ripe_ris
 from bgpsyche.util.benchmark import Progress
+from bgpsyche.util.const import HERE
 
 _LOG = logging.getLogger(__name__)
 
 _WORKER_PROCESSES_AMNT = 6
+_RESULT_DIR = HERE / 'research' / 'results'
 
-def _research_candidates_include_real_worker(args) -> t.Tuple[int, int]:
+def _research_candidates_include_real_worker(args) -> t.Tuple[int, int, t.List[int]]:
     paths: t.List[t.List[int]] = args[0]
     worker_num: int = args[1]
     # queue: multiprocessing.Queue = args[2]
@@ -22,10 +26,13 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[int, int]:
 
     iter = 0
     included = 0
+    included_pos: t.List[int] = []
     for path in paths:
         iter += 1; prg.update()
         candidates = flatten_candidates(get_path_candidates(path[0], path[-1]))
-        if path in candidates: included += 1
+        if path in candidates:
+            included += 1
+            included_pos.append(candidates.index(path))
 
         if iter % 1 == 0:
             percent = round((included / iter) * 100, 2)
@@ -34,7 +41,7 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[int, int]:
             )
             # queue.put((iter, included))
 
-    return iter, included
+    return iter, included, included_pos
 
 
 # def _worker_watcher(queue: multiprocessing.Queue) -> None:
@@ -62,7 +69,7 @@ def _research_candidates_include_real():
     for i in range(0, _WORKER_PROCESSES_AMNT):
         worker_params.append((paths_split_by_worker[i], i))
 
-    iter, included = 0, 0
+    iter, included, included_pos = 0, 0, []
 
     # watcher = multiprocessing.Process(
     #     target=_worker_watcher, args=(queue,)
@@ -74,16 +81,33 @@ def _research_candidates_include_real():
                 _research_candidates_include_real_worker,
                 worker_params
         ):
-            w_iter, w_included = t.cast(t.Tuple[int, int], res)
+            w_iter, w_included, w_included_pos = t.cast(
+                t.Tuple[int, int, t.List[int]], res
+            )
             iter += w_iter
             included += w_included
+            included_pos += w_included_pos
             percent = round((included / iter) * 100, 2)
-            _LOG.warning(f'Worker Done: {percent}')
+            avg_pos = statistics.mean(w_included_pos)
+            _LOG.warning(f'Worker Done: {percent}, avg pos: {avg_pos}')
 
     percent = round((included / iter) * 100, 2)
-    _LOG.warning(f'All Done: {percent}')
+    avg_pos = statistics.mean(included_pos)
+
+    with open(
+            _RESULT_DIR /
+            f'{datetime.now().strftime("%Y%m%d.%H%M")}-candidates-include-real.json',
+            'w', encoding='UTF-8'
+    ) as f:
+        f.write(json.dumps({
+            'percent': percent,
+            'avg_pos': avg_pos,
+            'included_pos': included_pos,
+        }))
+
+    _LOG.warning(f'All Done: {percent}, avg pos: {avg_pos}')
     # queue.put('stop')
-            
+
 
 
 def _load_ris_paths() -> t.List[t.List[int]]:

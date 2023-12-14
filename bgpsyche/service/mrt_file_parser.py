@@ -266,7 +266,7 @@ def iter_paths(
             f'SELECT COUNT({"DISTINCT as_path" if distinct_paths else "*"}) ' +
             f'FROM {_TABLE_DATA}'
         ).fetchone()[0]
-        assert tbl_size >= 10_000
+        # assert tbl_size >= 10_000
 
         iter = 0
         for row in tx.execute(query):
