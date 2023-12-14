@@ -1,4 +1,5 @@
 import functools
+import itertools
 import logging
 from time import time
 import typing as t
@@ -7,7 +8,7 @@ from datetime import datetime
 import networkx as nx
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.service.bgp_graph import as_graphs_from_paths, bgp_graph_to_networkx
-from bgpsyche.service.ext import ripe_ris
+from bgpsyche.service.ext import ripe_ris, routeviews
 
 _LOG = logging.getLogger(__name__)
 
@@ -103,8 +104,13 @@ def _mk_paths_dict_by_length(
 def _get_as_graph() -> nx.DiGraph:
     as_graph_cache = PickleFileCache(
         'as_graphs',
-        lambda: as_graphs_from_paths(ripe_ris.iter_paths(
-            datetime.fromisoformat('2023-05-01T00:00')
+        lambda: as_graphs_from_paths(itertools.chain(
+            routeviews.iter_paths(
+                datetime.fromisoformat('2023-05-01T00:00')
+            ),
+            ripe_ris.iter_paths(
+                datetime.fromisoformat('2023-05-01T00:00')
+            ),
         ))[0]
     )
 

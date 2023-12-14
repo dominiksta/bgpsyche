@@ -65,6 +65,9 @@ def _research_candidates_include_real():
         list(a) for a in np.array_split(ris_paths, _WORKER_PROCESSES_AMNT)
     ]
 
+    # HACK: initialize cache before workers all start populating cache
+    get_path_candidates(3320, 3320)
+
     worker_params = []
     # queue = multiprocessing.Queue()
 
@@ -113,6 +116,9 @@ def _research_candidates_include_real():
 
 
 def _load_ris_paths() -> t.List[t.List[int]]:
+    # NOTE: THESE HAVE TO BE THE SAME AS IN GET_CANDIDATES!
+    # HACK: change get_candidates to be parameterizable?
+
     return [
         p['path'] for p in itertools.chain(
             routeviews.iter_paths(
