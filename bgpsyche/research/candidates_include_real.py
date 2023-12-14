@@ -1,20 +1,22 @@
+import itertools
 import multiprocessing
 import json
 import typing as t
 from datetime import datetime
 import logging
 import statistics
+import os
 
 import numpy as np
 import bgpsyche.logging_config
 from bgpsyche.stage1_candidates import get_path_candidates, flatten_candidates
-from bgpsyche.service.ext import ripe_ris
+from bgpsyche.service.ext import ripe_ris, routeviews
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import HERE
 
 _LOG = logging.getLogger(__name__)
 
-_WORKER_PROCESSES_AMNT = 6
+_WORKER_PROCESSES_AMNT = (os.cpu_count() or 3) - 2
 _RESULT_DIR = HERE / 'research' / 'results'
 
 def _research_candidates_include_real_worker(args) -> t.Tuple[int, int, t.List[int]]:
@@ -112,8 +114,13 @@ def _research_candidates_include_real():
 
 def _load_ris_paths() -> t.List[t.List[int]]:
     return [
-        p['path'] for p in ripe_ris.iter_paths(
-            datetime.fromisoformat('2023-05-01T00:00')
+        p['path'] for p in itertools.chain(
+            routeviews.iter_paths(
+                datetime.fromisoformat('2023-05-01T00:00')
+            ),
+            ripe_ris.iter_paths(
+                datetime.fromisoformat('2023-05-01T00:00')
+            ),
         )
     ]
 
