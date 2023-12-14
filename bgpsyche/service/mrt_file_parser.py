@@ -84,24 +84,22 @@ def iter_mrt_file_paths(
 def _prepare_sqlite_single(args):
     mrt_file: Path               = args[0]
     sqlite_file: Path            = args[1]
-    origin_name: t.Optional[str] = args[2]
 
     BUFFER_SIZE = 100_000
-    _origin_name = origin_name if origin_name is not None else mrt_file.name
 
-    buffer: t.List[t.Tuple[int, int, str, str, str]] = []
+    buffer: t.List[t.Tuple[int, int, str, str]] = []
     for path, prefix in iter_mrt_file_paths(
             mrt_file,
     ):
         path_str = ' '.join(map(str, path))
-        buffer.append((path[0], path[-1], path_str, _origin_name, str(prefix)))
+        buffer.append((path[0], path[-1], path_str, str(prefix)))
         if len(buffer) % BUFFER_SIZE == 0:
             # _LOG.info(f'Inserting {BUFFER_SIZE} paths into table {table_name}')
             with sqlite3.connect(sqlite_file, timeout=120) as tx:
                 tx.executemany(f"""
                   INSERT INTO {_TABLE_DATA}
-                    (as_source, as_sink, as_path, origin, prefix)
-                    VALUES (?, ?, ?, ?, ?)
+                    (as_source, as_sink, as_path, prefix)
+                    VALUES (?, ?, ?, ?)
                     ON CONFLICT DO UPDATE SET count=excluded.count+1
                 """, buffer)
             buffer = []
@@ -109,8 +107,8 @@ def _prepare_sqlite_single(args):
     with sqlite3.connect(sqlite_file, timeout=120) as tx:
         tx.executemany(f"""
           INSERT INTO {_TABLE_DATA}
-            (as_source, as_sink, as_path, origin, prefix)
-            VALUES (?, ?, ?, ?, ?)
+            (as_source, as_sink, as_path, prefix)
+            VALUES (?, ?, ?, ?)
             ON CONFLICT DO UPDATE SET count=excluded.count+1
         """, buffer)
 
@@ -118,7 +116,6 @@ def _prepare_sqlite_single(args):
 def _prepare_sqlite(
         sqlite_file: Path,
         mrt_files: t.List[Path],
-        origin_name: t.Optional[str] = None,
         workers: int = -1,
 ):
     with sqlite3.connect(sqlite_file, timeout=120) as tx:
@@ -151,9 +148,7 @@ def _prepare_sqlite(
 
     progress = Progress(len(mrt_files), f'Parsing MRT files {sqlite_file.name}')
 
-    args = [
-        (f, sqlite_file, origin_name) for f in mrt_files
-    ]
+    args = [ (f, sqlite_file) for f in mrt_files ]
 
     if workers == -1: workers = (os.cpu_count() or 3) - 2
     with multiprocessing.Pool(workers) as p:

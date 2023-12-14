@@ -110,6 +110,7 @@ class NetworkPrefixTreeV4(_NetworkPrefixTree):
         for net in nets: t.insert(net)
         return t
 
+
 class NetworkPrefixTreeV6(_NetworkPrefixTree):
     def insert(self, net: IPv6Network): return super().insert(net)
     def search(self, addr: IPv6Address) -> t.Optional[IPv6Network]:
@@ -120,6 +121,18 @@ class NetworkPrefixTreeV6(_NetworkPrefixTree):
         t = NetworkPrefixTreeV6()
         for net in nets: t.insert(net)
         return t
+
+
+def make_prefix_trees_for_list(
+        prefixes: t.Iterable[IPNetwork]
+) -> t.Tuple[NetworkPrefixTreeV4, NetworkPrefixTreeV6]:
+    tree_v4 = NetworkPrefixTreeV4()
+    tree_v6 = NetworkPrefixTreeV6()
+    for prefix in prefixes:
+        if prefix.version == 4: tree_v4.insert(prefix)
+        else: tree_v6.insert(prefix)
+
+    return tree_v4, tree_v6
 
 
 def _test():

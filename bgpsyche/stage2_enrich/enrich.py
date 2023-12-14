@@ -5,12 +5,12 @@ from bgpsyche.service.ext.asrank import get_asrank
 from bgpsyche.service.ext.ripe_as_names_countries import (
     get_ripe_as_country, get_ripe_as_name
 )
-from bgpsyche.stage2_enrich.types import ASFeatures
+from bgpsyche.stage2_enrich.types import ASFeaturesRaw
 
 def _maybe(d: t.Any, key: str) -> t.Any: return d[key] if d else None
 
 
-def enrich_asn(asn: int) -> ASFeatures:
+def enrich_asn(asn: int) -> ASFeaturesRaw:
     pdb_info = peeringdb.Client.get_network_by_asn(asn)
 
     return {
@@ -25,5 +25,5 @@ def enrich_asn(asn: int) -> ASFeatures:
     }
 
 
-def enrich_path(path: t.List[int]) -> t.List[ASFeatures]:
+def enrich_path(path: t.List[int]) -> t.List[ASFeaturesRaw]:
     return [ enrich_asn(asn) for asn in path ]
