@@ -9,7 +9,8 @@ from bgpsyche.service.ext import ripe_ris
 def _research_compute_path_lengths():
     res: t.Dict[int, int] = defaultdict(int)
     for path_meta in ripe_ris.iter_paths(
-            datetime.fromisoformat('2023-05-01T00:00')
+            datetime.fromisoformat('2023-05-01T00:00'),
+            eliminate_path_prepending=True,
     ):
         l = len(path_meta['path'])
         res[l] += 1
