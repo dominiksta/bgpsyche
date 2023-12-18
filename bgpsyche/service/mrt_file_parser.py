@@ -75,7 +75,11 @@ def iter_mrt_file_paths(
             else: path_int.append(int(path[i]))
 
         if skip_with_cycle and \
-           False in [ path_int.count(asn) == 1 for asn in path_int ]:
+           False in [
+               _eliminate_path_prepending(path_int).count(asn) == 1
+               for asn in path_int
+           ]:
+            # print(f'Cycle: {path_int}')
             continue
 
         yield path_int, ip_network(elem['prefix'])
@@ -206,7 +210,7 @@ def iter_paths(
         distinct_paths: t.Literal[True] = True,
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
-        eliminate_path_prepending: bool = False,
+        eliminate_path_prepending: bool = True,
         sqlite_cache_file_prefix = '',
 ) -> t.Iterator[ASPathMeta]: pass
 
@@ -216,7 +220,7 @@ def iter_paths(
         distinct_paths: t.Literal[False],
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
-        eliminate_path_prepending: bool = False,
+        eliminate_path_prepending: bool = True,
         sqlite_cache_file_prefix = '',
 ) -> t.Iterator[ASPathMetaWithPrefix]: pass
 
@@ -225,7 +229,7 @@ def iter_paths(
         distinct_paths: bool = True,
         filter_sources: t.Optional[t.Set[int]] = None,
         filter_sinks: t.Optional[t.Set[int]] = None,
-        eliminate_path_prepending: bool = False,
+        eliminate_path_prepending: bool = True,
         sqlite_cache_file_prefix = '',
 ) -> t.Union[
     t.Iterator[ASPathMeta],
@@ -279,6 +283,8 @@ def iter_paths(
             iter += 1
             if iter % 100_000 == 0:
                 _LOG.info(f'Got {iter}/{tbl_size} rows from {_TABLE_DATA}')
+
+            if len(path_int) == 1: continue
 
             # while we could do this in sql, that would put a hard limit on the
             # amount of sources/sinks we can filter because there can only be so
