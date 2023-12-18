@@ -5,7 +5,7 @@ import itertools
 
 import networkx as nx
 import bgpsyche.logging_config
-from bgpsyche.service.bgp_graph import as_graphs_from_paths, bgp_graph_to_networkx
+from bgpsyche.service.bgp_graph import as_graphs_from_paths
 from bgpsyche.service.ext import ripe_ris, routeviews, mrt_custom
 from bgpsyche.service.mrt_file_parser import ASPathMeta
 
@@ -19,7 +19,7 @@ _MkPathIter = t.Callable[[], t.Iterator[ASPathMeta]]
 _mkdate = datetime.fromisoformat
 
 def _get_graph_completeness(
-        graph: nx.DiGraph, paths: t.Iterator[ASPathMeta]
+        graph: nx.Graph, paths: t.Iterator[ASPathMeta]
 ) -> t.Tuple[float, int, int]:
     found = 0
     iter = 0
@@ -49,8 +49,8 @@ def _get_graph_completeness_both_directions(
     _LOG.info(f'b2a: *{b2a[0]}%* ({b2a[1]:_}/{b2a[2]:_})')
 
 
-def _mk_graph(paths: t.Iterator[ASPathMeta]) -> nx.DiGraph:
-    return bgp_graph_to_networkx(as_graphs_from_paths(paths)[0])
+def _mk_graph(paths: t.Iterator[ASPathMeta]) -> nx.Graph:
+    return as_graphs_from_paths(paths)[0]
 
 
 # experiments

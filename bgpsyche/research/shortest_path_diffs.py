@@ -6,7 +6,7 @@ import bgpsyche.logging_config
 import editdistance
 import networkx as nx
 from bgpsyche.caching.pickle import PickleFileCache
-from bgpsyche.service.bgp_graph import as_graphs_from_paths, bgp_graph_to_networkx
+from bgpsyche.service.bgp_graph import as_graphs_from_paths
 from bgpsyche.service.ext import ripe_ris, routeviews
 
 
@@ -19,7 +19,7 @@ def _research_compute_shortest_paths_diffs():
     )
 
     # as_graph_cache.invalidate()
-    as_graph = bgp_graph_to_networkx(as_graph_cache.get())
+    as_graph = as_graph_cache.get()
 
     edit_distances: t.List[float] = []
     exact_matches = 0

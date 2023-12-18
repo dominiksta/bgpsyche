@@ -7,7 +7,7 @@ from datetime import datetime
 
 import networkx as nx
 from bgpsyche.caching.pickle import PickleFileCache
-from bgpsyche.service.bgp_graph import as_graphs_from_paths, bgp_graph_to_networkx
+from bgpsyche.service.bgp_graph import as_graphs_from_paths
 from bgpsyche.service.ext import ripe_ris, routeviews
 
 _LOG = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def flatten_candidates(
 
 
 def _candidates_all_paths_starting_shortest(
-        as_graph: nx.DiGraph, source: int, sink: int,
+        as_graph: nx.Graph, source: int, sink: int,
         timeout_s: float, max_paths: int,
         abort_on: t.List[t.Callable[[t.List[int]], bool]] = [],
         quiet: bool = False,
@@ -94,7 +94,7 @@ def _mk_paths_dict_by_length(
 
 
 @functools.lru_cache()
-def _get_as_graph() -> nx.DiGraph:
+def _get_as_graph() -> nx.Graph:
     as_graph_cache = PickleFileCache(
         'as_graphs',
         lambda: as_graphs_from_paths(itertools.chain(
@@ -108,5 +108,5 @@ def _get_as_graph() -> nx.DiGraph:
     )
 
     # as_graph_cache.invalidate()
-    return bgp_graph_to_networkx(as_graph_cache.get())
+    return as_graph_cache.get()
 
