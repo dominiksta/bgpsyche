@@ -12,58 +12,45 @@ from bgpsyche.service.ext import ripe_ris, routeviews
 
 _LOG = logging.getLogger(__name__)
 
+class PathCandidatesRes(t.TypedDict):
+    candidates: t.List[t.List[int]]
+    by_length: t.Dict[int, t.List[t.List[int]]]
+
+
 PathCandidatesByLen = t.Dict[int, t.List[t.List[int]]]
 
-class AllPathCandidates(t.TypedDict):
-    shortest: PathCandidatesByLen
-    all: PathCandidatesByLen
-
 def get_path_candidates(
-        source: int, sink: int
-) -> AllPathCandidates:
-    _LOG.info(f'Getting Path Candidates {source}->{sink}')
+        source: int, sink: int,
+        abort_on: t.List[t.Callable[[t.List[int]], bool]] = [],
+        quiet: bool = False,
+) -> PathCandidatesRes:
+    if not quiet: _LOG.info(f'Getting Path Candidates {source}->{sink}')
     as_graph = _get_as_graph()
 
-    candidates_shortest = _mk_paths_dict_by_length(
-        _candidates_shortest_paths(as_graph, source, sink)
-    )
-
-    candidates_all = _mk_paths_dict_by_length(
-        _candidates_all_paths_starting_shortest(
-            as_graph, source, sink,
-            timeout_s=20, max_paths=4000
-        )
+    candidates = _candidates_all_paths_starting_shortest(
+        as_graph, source, sink,
+        timeout_s=20, max_paths=4000,
+        abort_on=abort_on, quiet=quiet
     )
 
     return {
-        'shortest': candidates_shortest,
-        'all': candidates_all,
+        'candidates': candidates,
+        'by_length': _mk_paths_dict_by_length(candidates),
     }
 
 
 def flatten_candidates(
-        candidates: AllPathCandidates
+        candidates: PathCandidatesByLen
 ) -> t.List[t.List[int]]:
-    ret: t.List[t.List[int]] = []
-    for kind in candidates.keys():
-        for length in candidates[kind].keys():
-            ret.extend(candidates[kind][length])
-    return ret
-
-
-def _candidates_shortest_paths(
-        as_graph: nx.DiGraph, source: int, sink: int
-) -> t.List[t.List[int]]:
-    _LOG.info(f'Getting Shortest Paths {source}->{sink}')
-    return list(nx.all_shortest_paths(as_graph, source, sink))
+    return list(itertools.chain.from_iterable(candidates.values()))
 
 
 def _candidates_all_paths_starting_shortest(
         as_graph: nx.DiGraph, source: int, sink: int,
-        timeout_s: float, max_paths: int
+        timeout_s: float, max_paths: int,
+        abort_on: t.List[t.Callable[[t.List[int]], bool]] = [],
+        quiet: bool = False,
 ) -> t.List[t.List[int]]:
-    """Realistically, this will only compute paths up to length 5"""
-    _LOG.info(f'Getting All Paths {source}->{sink}')
     time_start = time()
     ret: t.List[t.List[int]] = []
     iter = 0
@@ -74,14 +61,20 @@ def _candidates_all_paths_starting_shortest(
         if iter % 500 == 0:
             # _LOG.info(f'Found {iter} paths')
             if time() - time_start > timeout_s:
-                _LOG.info(
+                if not quiet: _LOG.info(
                     f'Path search timed out after {timeout_s}s ' +
                     f' with {iter} paths found'
                 )
                 break
 
+        if True in ( func(path) for func in abort_on ):
+            _LOG.debug(
+                f'Path search finished bc abort callback returned True'
+            )
+            break
+
         if iter >= max_paths:
-            _LOG.info(
+            _LOG.debug(
                 f'Path search finished with {iter} paths found'
             )
             break

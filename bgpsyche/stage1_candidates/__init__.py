@@ -1,1 +1,1 @@
-from .get_candidates import get_path_candidates, flatten_candidates
+from .get_candidates import get_path_candidates
