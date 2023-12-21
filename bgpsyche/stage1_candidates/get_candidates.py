@@ -29,7 +29,7 @@ def get_path_candidates(
 
     candidates = _candidates_all_paths_starting_shortest(
         as_graph, source, sink,
-        timeout_s=20, max_paths=4000,
+        timeout_s=5, max_paths=4000,
         abort_on=abort_on, quiet=quiet
     )
 

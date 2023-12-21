@@ -24,7 +24,7 @@ if _args.stage == '01_get_path_candidates':
     # 23673 23764 4134 4538 23910 24371
     candidates = get_path_candidates(23673, 24371)
     print([23673, 23764, 4134, 4538, 23910, 24371] in candidates['by_length'][6])
-    print(len(candidates['by_length'][6]))
+    print(len(candidates['candidates']))
 
 
     # 14840 →  32098 ↘  13999 ↘ 265620
