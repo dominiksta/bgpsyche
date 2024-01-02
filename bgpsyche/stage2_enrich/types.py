@@ -52,3 +52,6 @@ class PathFeatures(t.TypedDict):
     # # The amount of peaks in the asrank curve.
     # asrank_peaks: int
     asrank_variance: float
+    # The difference between the length of the path and the longest subpath seen
+    # in real paths. Larger values should indicate a less likely path.
+    longest_real_snippet_diff: int

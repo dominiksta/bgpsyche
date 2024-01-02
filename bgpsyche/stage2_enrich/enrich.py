@@ -2,6 +2,7 @@ from datetime import datetime
 import statistics
 import typing as t
 
+from bgpsyche.service.bgp_path_snippet_length import longest_real_snippet
 from bgpsyche.service.ext import peeringdb
 from bgpsyche.service.ext.asrank import get_asrank
 from bgpsyche.service.ext.caida_asrel import get_caida_asrel
@@ -38,4 +39,5 @@ def enrich_path(path: t.List[int]) -> PathFeatures:
         'is_valley_free': path_is_valley_free(get_caida_asrel(dt), path),
         'geographic_distance_diff': geographic_distance_diff(path)[0],
         'asrank_variance': statistics.variance([get_asrank(asn) for asn in path]),
+        'longest_real_snippet_diff': len(path) - len(longest_real_snippet(path)),
     }

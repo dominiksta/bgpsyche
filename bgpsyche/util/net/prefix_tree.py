@@ -30,11 +30,49 @@ class _PrefixTreeNode(t.Generic[_HashableT, _T]):
         self.__children[child.key] = child
 
     def get_child(self, key: _HashableT) -> '_PrefixTreeNode':
-        assert key in self.__children
+        assert key in self.__children, self.__children
         return self.__children[key]
 
     def has_child(self, key: _HashableT) -> bool:
         return key in self.__children
+
+
+class PrefixTree:
+    def __init__(self):
+        self.root = _PrefixTreeNode(0)
+        self.__paths: t.Set[str] = set()
+
+    def insert(self, path: t.Iterable[int]):
+        path = tuple(path)
+        path_str = ','.join(map(str, path))
+        if path_str in self.__paths: return
+        self.__paths.add(path_str)
+
+        current = self.root
+        for i, char in enumerate(path):
+            if not current.has_child(char):
+                # print({ 'char': char, 'prefix': path[0:i+1] })
+                current.add_child(_PrefixTreeNode(char))
+            current = current.get_child(char)
+
+    def search(self, path: t.Iterable[int]) -> bool:
+        path = tuple(path)
+        current = self.root
+        for char in path:
+            if not current.has_child(char):
+                return False
+            current = current.get_child(char)
+        return True
+
+    @staticmethod
+    def from_iter(paths: t.Iterable[t.Iterable[int]]) -> 'PrefixTree':
+        tree = PrefixTree()
+        for path in paths: tree.insert(path)
+        return tree
+
+    @property
+    def paths(self): return self.__paths
+
 
 
 class _NetworkPrefixTree:
@@ -135,6 +173,21 @@ def make_prefix_trees_for_list(
     return tree_v4, tree_v6
 
 
+def _test_basic():
+    tree = PrefixTree()
+    tree.insert([1, 2, 3])
+    tree.insert([1, 2, 3, 4])
+    tree.insert([1, 2, 3, 4, 5])
+    tree.insert([1, 2, 4])
+
+    assert     tree.search([1, 2])
+    assert not tree.search([1, 2, 5])
+    assert     tree.search([1, 2, 4])
+    assert     tree.search([1, 2, 3, 4, 5])
+    assert not tree.search([2, 3, 4])
+    assert not tree.search([2, 3])
+
+
 def _test():
 
     tree = NetworkPrefixTreeV4()
@@ -159,4 +212,6 @@ def _test():
 
 
 
-if __name__ == '__main__': _test()
+if __name__ == '__main__':
+    _test()
+    _test_basic()
