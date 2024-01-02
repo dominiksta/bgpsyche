@@ -436,3 +436,10 @@ COUNTRY_DISTANCES: t.Dict[
     Alpha2WithLocation,
     t.Dict[Alpha2WithLocation, float]
 ] = _compute_country_distances()
+
+
+if __debug__:
+    assert  600 < COUNTRY_DISTANCES['DE']['FR'] <  900
+    assert 1000 < COUNTRY_DISTANCES['DE']['NO'] < 1300
+    assert 4000 < COUNTRY_DISTANCES['DE']['RU'] < 6000
+    assert 6000 < COUNTRY_DISTANCES['DE']['CN'] < 8000
