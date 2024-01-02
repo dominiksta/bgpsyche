@@ -17,7 +17,7 @@ class ASFeaturesRaw(t.TypedDict):
 
 class PathFeatures(t.TypedDict):
     length: int
-
+    is_valley_free: t.Optional[bool]
     # Intuition: A path that goes from a source in Germany to a destination in
     # Germany is likely not going to contain an AS in China.
     #
@@ -48,4 +48,7 @@ class PathFeatures(t.TypedDict):
     # - If the unlocatable hop is the source or destination AS, we will use the
     #   average final value of `geographic_distance_diff` for all paths, which
     #   is 175km.
-    geographic_distance_diff: t.List[float]
+    geographic_distance_diff: float
+    # # The amount of peaks in the asrank curve.
+    # asrank_peaks: int
+    asrank_variance: float

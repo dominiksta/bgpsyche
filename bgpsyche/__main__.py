@@ -35,7 +35,8 @@ if _args.stage == '01_get_path_candidates':
     print(candidates['by_length'].keys())
 
 elif _args.stage == '02_enrich_path_candidates':
-    # 23673 23764 4134 4538 23910 24371
-    candidates = get_path_candidates(23673, 24371)['candidates']
+    candidates = get_path_candidates(14840, 265620)['candidates']
+    print(len(candidates))
 
-    pprint(enrich_path(candidates[0]))
+    for path in candidates[:50]:
+        pprint({ 'path': path, 'features': enrich_path(path) })

@@ -18,7 +18,7 @@ Prefix2AS = t.Dict[IPNetwork, t.Set[int]]
 AS2Prefix = t.Dict[int, t.Set[IPNetwork]]
 
 
-@bench_function
+# @bench_function
 def prefix2as(prefix: IPNetwork) -> t.Set[int]:
     prefix2as_, _ = get_prefix2as_default()
     # tree_search = lookup['tree_v4'] \
@@ -31,7 +31,7 @@ def prefix2as(prefix: IPNetwork) -> t.Set[int]:
     return prefix2as_[prefix]
 
 
-@bench_function
+# @bench_function
 def as2prefix(asn: int) -> t.Set[IPNetwork]:
     _, as2prefix_ = get_prefix2as_default()
     if not asn in as2prefix_: return set()

@@ -1,3 +1,4 @@
+import functools
 import typing as t
 import bz2
 from collections import defaultdict
@@ -27,7 +28,8 @@ def download_caida_asrel(date: datetime) -> Path:
 _num2relationship: t.Dict[int, RelationshipKind] = { 1: 'c2p', 0: 'p2p', -1: 'p2c' }
 
 
-def read_caida_file(
+@functools.lru_cache()
+def get_caida_asrel(
         date: datetime,
         enforce_t1 = True,
 ) -> Source2Sink2Rel:
