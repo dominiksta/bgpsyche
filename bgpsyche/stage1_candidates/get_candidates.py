@@ -19,6 +19,12 @@ class PathCandidatesRes(t.TypedDict):
 
 PathCandidatesByLen = t.Dict[int, t.List[t.List[int]]]
 
+
+def abort_on_timeout(timeout_s: float) -> t.Callable[[t.List[int]], bool]:
+    before = time()
+    return lambda _path: (time() - before) > timeout_s
+
+
 def get_path_candidates(
         source: int, sink: int,
         abort_on: t.List[t.Callable[[t.List[int]], bool]] = [],

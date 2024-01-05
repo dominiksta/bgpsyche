@@ -1,11 +1,12 @@
 import itertools
 import multiprocessing
 import json
+from time import time
 import typing as t
 from datetime import datetime
 import logging
 import statistics
-import os
+from os import cpu_count
 
 import bgpsyche.logging_config
 import numpy as np
@@ -16,24 +17,25 @@ from bgpsyche.util.const import HERE
 
 _LOG = logging.getLogger(__name__)
 
-_WORKER_PROCESSES_AMNT = (os.cpu_count() or 3) - 2
+_WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 2
 _WORKER_CHUNKSIZE = 100
 _RESULT_DIR = HERE / 'research' / 'results'
 
 def _research_candidates_include_real_worker(args) -> t.Tuple[
-        bool, t.Optional[int], t.List[int]
+        bool, t.Optional[int], t.List[int], float
 ]:
     path: t.List[int] = args[0]
+    before = time()
     candidates = get_path_candidates(
         path[0], path[-1],
         abort_on=[ lambda p: p == path ],
         quiet=True,
     )['candidates']
     if path in candidates:
-        return True, candidates.index(path), path
+        return True, candidates.index(path), path, round(time() - before, 2)
     else:
         # _LOG.info(f'Path not found: {path}')
-        return False, None, path
+        return False, None, path, 0.0
 
 
 def _research_candidates_include_real():
@@ -45,7 +47,7 @@ def _research_candidates_include_real():
 
     worker_params = ( (path,) for path in ris_paths )
 
-    iter, included, included_pos, not_included_len = 0, 0, [], []
+    iter, included, included_pos, not_included_len, took = 0, 0, [], [], []
 
     prg = Progress(
         round(len(ris_paths) / _WORKER_CHUNKSIZE),
@@ -59,12 +61,13 @@ def _research_candidates_include_real():
                 _research_candidates_include_real_worker,
                 worker_params, chunksize=_WORKER_CHUNKSIZE
         ):
-            w_included, w_included_pos, w_path = t.cast(
-                t.Tuple[bool, t.Optional[int], t.List[int]], res
+            w_included, w_included_pos, w_path, w_took = t.cast(
+                t.Tuple[bool, t.Optional[int], t.List[int], float], res
             )
             iter += 1
             if w_included:
                 included += 1
+                took.append(w_took)
             else:
                 not_included_len.append(len(w_path))
             if w_included_pos: included_pos.append(w_included_pos)
@@ -73,10 +76,12 @@ def _research_candidates_include_real():
                 prg.update()
                 percent = round((included / iter) * 100, 2)
                 avg_pos = statistics.mean(included_pos)
+                avg_took = statistics.mean(took)
                 avg_not_included_len = statistics.mean(not_included_len or [0])
                 _LOG.warning(
                     f'Current result: {percent} ({included}/{iter}), ' +
-                    f'avg pos: {avg_pos}, avg not_included_len: {avg_not_included_len}'
+                    f'avg pos: {avg_pos}, avg took: {avg_took}, ' +
+                    f'avg not_included_len: {avg_not_included_len}'
                 )
 
                 with open(
@@ -87,7 +92,9 @@ def _research_candidates_include_real():
                     f.write(json.dumps({
                         'percent': percent,
                         'avg_pos': avg_pos,
+                        'avg_took': avg_took,
                         'avg_not_included_len': avg_not_included_len,
+                        'took': took,
                         'included_pos': included_pos,
                         'not_included_len': not_included_len
                     }, indent=2))

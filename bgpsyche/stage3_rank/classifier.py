@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 import bgpsyche.logging_config
 from bgpsyche.caching.pickle import PickleFileCache
-from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
+from bgpsyche.stage1_candidates.get_candidates import abort_on_timeout, get_path_candidates
 from bgpsyche.stage2_enrich.enrich import enrich_path
 from bgpsyche.stage3_rank.vectorize_features import FEATURE_VECTOR_NAMES, vectorize_features
 from bgpsyche.util.benchmark import Progress
@@ -25,12 +25,19 @@ _WORKER_CHUNKSIZE = 10
 
 
 def _get_path_candidates_worker(path: t.List[int]):
-    return get_path_candidates(path[0], path[-1]), path
+    return get_path_candidates(
+        source=path[0], sink=path[-1],
+        abort_on=[
+            # since we really only want to find a handful of wrong paths, it
+            # does not matter if we find the correct path before the timeout.
+            abort_on_timeout(0.7)
+        ]
+    ), path
 
 
 def _make_path_dataset(
         candidates_per_real_path = 10,
-        real_paths_n = 100,
+        real_paths_n = 10_000,
         routeviews_dts: t.List[datetime] = [
             datetime.fromisoformat('2023-05-01T00:00'),
         ],
