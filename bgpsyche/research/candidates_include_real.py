@@ -28,7 +28,7 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[
     before = time()
     candidates = get_path_candidates(
         path[0], path[-1],
-        abort_on=[ lambda p: p == path ],
+        abort_on=[{ 'func': lambda p: p == path, 'desc': 'path eq' }],
         quiet=True,
     )['candidates']
     if path in candidates:

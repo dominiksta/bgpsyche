@@ -1,8 +1,13 @@
-import logging
 import typing as t
+from datetime import datetime
+import itertools
+import functools
+import logging
 
 import networkx as nx
 from bgpsyche.service.mrt_file_parser import ASPathMeta
+from bgpsyche.util.const import JOBLIB_MEMORY
+from bgpsyche.service.ext import ripe_ris, routeviews
 
 _LOG = logging.getLogger(__name__)
 
@@ -37,3 +42,19 @@ def as_graphs_from_paths(
 
     _LOG.info(f'Got BGP Graph with {graph_full.number_of_nodes()} nodes')
     return graph_full, dest2graph
+
+
+@functools.lru_cache()
+@JOBLIB_MEMORY.cache
+def as_graph_from_ext(
+        routeviews_dts = [
+            datetime.fromisoformat('2023-05-01T00:00')
+        ],
+        ripe_ris_dts = [
+            datetime.fromisoformat('2023-05-01T00:00')
+        ]
+) -> nx.Graph:
+    return as_graphs_from_paths(itertools.chain(
+        *[ripe_ris.iter_paths(dt) for dt in ripe_ris_dts],
+        *[routeviews.iter_paths(dt) for dt in routeviews_dts],
+    ))[0]
