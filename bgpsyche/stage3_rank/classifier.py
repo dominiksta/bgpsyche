@@ -18,7 +18,9 @@ def test():
     # TODO: try other classifiers and *auto-sklearn*
     classifier = DecisionTreeClassifier(random_state=rng)
 
-    X, y = make_path_dataset()
+    dataset = make_path_dataset()
+    X = [ p['path_features'] for p in dataset ]
+    y = [ int(p['real']) for p in dataset ]
     _LOG.info('Got training data set')
 
     print(X[0:10], y[0:10])

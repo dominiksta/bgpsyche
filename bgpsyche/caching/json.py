@@ -20,9 +20,17 @@ class JSONFileCache(base.SerializableFileCache[JSONSerializable]):
         super().__init__(
             name=name,
             getter=getter,
-            serialize=lambda v: json.dumps(v).encode('UTF-8'),
-            deserialize=lambda b: json.loads(b.decode('UTF-8')),
             parents=parents,
             config_meta_path=config_meta_path, 
             config_cache_path=config_cache_path, 
         )
+
+    @property
+    def _cache_path(self):
+        return self._config_cache_path / f'{self.name}_data.json'
+
+    def _serialize(self, data):
+        return json.dumps(data).encode('UTF-8')
+
+    def _deserialize(self, data):
+        return json.loads(data.decode('UTF-8'))

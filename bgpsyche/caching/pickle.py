@@ -15,11 +15,10 @@ class PickleFileCache(base.SerializableFileCache[_T]):
             config_meta_path = base.Cache._DEFAULT_META_PATH,
             pickle_protocol = pickle.DEFAULT_PROTOCOL,
     ) -> None:
+        self.__pickle_protocol = pickle_protocol
         super().__init__(
             name=name,
             getter=getter,
-            serialize=lambda v: pickle.dumps(v, protocol=pickle_protocol),
-            deserialize=lambda b: pickle.loads(b),
             parents=parents,
             config_meta_path=config_meta_path, 
             config_cache_path=config_cache_path, 
@@ -28,3 +27,9 @@ class PickleFileCache(base.SerializableFileCache[_T]):
     @property
     def _cache_path(self):
         return self._config_cache_path / f'{self.name}_data.pickle'
+
+    def _serialize(self, data):
+        return pickle.dumps(data, protocol=self.__pickle_protocol)
+
+    def _deserialize(self, data):
+        return pickle.loads(data)

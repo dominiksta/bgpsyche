@@ -1,10 +1,12 @@
 from datetime import datetime
+import functools
 import logging
 import multiprocessing
 from os import cpu_count
 import typing as t
 
 import numpy as np
+from bgpsyche.caching.json import JSONFileCache
 import bgpsyche.logging_config
 from bgpsyche.stage1_candidates.get_candidates import (
     abort_on_amount, abort_on_timeout, get_path_candidates
@@ -14,11 +16,12 @@ from bgpsyche.stage3_rank.vectorize_features import vectorize_features
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import JOBLIB_MEMORY
 from bgpsyche.service.ext import routeviews, ripe_ris
+from bgpsyche.util.run_in_pypy import run_in_pypy
 
 _LOG = logging.getLogger(__name__)
 
-_WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 2
-_WORKER_CHUNKSIZE = 10
+_WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 3
+_WORKER_CHUNKSIZE = 100
 
 
 def _get_path_candidates_worker(path: t.List[int]):
@@ -30,32 +33,42 @@ def _get_path_candidates_worker(path: t.List[int]):
             { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
             { 'func': abort_on_amount(50), 'desc': 'found 50' },
         ],
-        unordered=True
+        unordered=True,
+        quiet=True,
     ), path
 
 
-@JOBLIB_MEMORY.cache
+class PathDatasetEl(t.TypedDict):
+    real: bool
+    path_features: t.List[t.Union[int, float]]
+
+
+@run_in_pypy(cache=JSONFileCache)
 def make_path_dataset(
         candidates_per_real_path = 10,
         real_paths_n = 10_000,
-        routeviews_dts: t.List[datetime] = [
-            datetime.fromisoformat('2023-05-01T00:00'),
+        routeviews_dts: t.List[str] = [
+            '2023-05-01T00:00',
         ],
-        ripe_ris_dts: t.List[datetime] = [
-            datetime.fromisoformat('2023-05-01T00:00'),
+        ripe_ris_dts: t.List[str] = [
+            '2023-05-01T00:00',
         ],
-) -> t.Tuple[np.ndarray, np.ndarray]:
+) -> t.List[PathDatasetEl]:
     real_paths: t.List[t.List[int]] = []
-    X, y = [], []
+    out: t.List[PathDatasetEl] = []
 
     _LOG.info('Loading paths into memory...')
 
     for dt in routeviews_dts:
-        for path_meta in routeviews.iter_paths(dt, eliminate_path_prepending=True):
+        for path_meta in routeviews.iter_paths(
+                datetime.fromisoformat(dt), eliminate_path_prepending=True
+        ):
             real_paths.append(path_meta['path'])
 
     for dt in ripe_ris_dts:
-        for path_meta in ripe_ris.iter_paths(dt, eliminate_path_prepending=True):
+        for path_meta in ripe_ris.iter_paths(
+                datetime.fromisoformat(dt), eliminate_path_prepending=True
+        ):
             real_paths.append(path_meta['path'])
             
 
@@ -87,11 +100,15 @@ def make_path_dataset(
                 if candidate == path: continue
                 iter_candidates += 1
                 if iter_candidates >= candidates_per_real_path: break
-                X.append(vectorize_features(enrich_path(candidate)))
-                y.append(0)
+                out.append({
+                    'path_features': vectorize_features(enrich_path(candidate)),
+                    'real': False,
+                })
 
-            X.append(vectorize_features(enrich_path(path)))
-            y.append(1)
+            out.append({
+                'path_features': vectorize_features(enrich_path(path)),
+                'real': True,
+            })
 
             if iter % _WORKER_CHUNKSIZE == 0:
                 prg.update()
@@ -99,7 +116,7 @@ def make_path_dataset(
         prg.complete()
 
 
-    return np.array(X), np.array(y)
-        
+    return out
+
 
 if __name__ == '__main__': make_path_dataset()

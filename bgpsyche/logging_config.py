@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 
 _LOG_FORMAT = (
-    '%(asctime)s %(levelname)-3s ' +
-    ('[%(module)s] ' if python_implementation() == 'CPython' else '[PyPy] ') +
+    '%(asctime)s %(levelname)-3s [%(module)s] ' +
+    ('' if python_implementation() == 'CPython' else '[PyPy] ') +
     '%(message)s'
 )
 _LOG_FORMAT_DATE = '%y-%m-%d %H:%M:%S'

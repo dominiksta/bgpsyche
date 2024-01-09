@@ -1,15 +1,19 @@
 from datetime import datetime
+import functools
+from pprint import pformat
 import json
 from pathlib import Path
 import typing as t
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod, abstractproperty
 import logging
 
 from bgpsyche.caching.json_encoder import JSONDatetimeDecoder, JSONDatetimeEncoder
 from bgpsyche.util.const import DATA_DIR
+from bgpsyche.util.platform import get_func_module
 
 _T = t.TypeVar('_T')
-_LOG = logging.getLogger('caching')
+_CallableT = t.TypeVar('_CallableT', bound=t.Callable)
+_LOG = logging.getLogger(__name__)
 
 
 class Cacheable(t.Generic[_T], metaclass=ABCMeta):
@@ -84,11 +88,13 @@ class Cache(Cacheable[_T]):
     class _Meta(t.TypedDict):
         last_updated: datetime
         valid: bool
+        custom: t.Any
 
     def _get_meta_defaults(self) -> _Meta:
         return {
             'last_updated': datetime.now(),
             'valid': False,
+            'custom': None,
         }
 
     @property
@@ -106,13 +112,11 @@ class Cache(Cacheable[_T]):
             self,
             valid: t.Optional[bool] = None,
             last_updated: t.Optional[datetime] = None,
+            custom: t.Any = None,
     ):
         args = locals()
         exists = self._get_meta() if self.__meta_path.exists() else {}
-        defaults = {
-            'valid': False,
-            'last_updated': datetime.now(),
-        }
+        defaults = self._get_meta_defaults()
         # "args or exists or defaults"
         a_o_e_o_d = lambda k: (
             args[k] if args[k] is not None else (
@@ -125,6 +129,7 @@ class Cache(Cacheable[_T]):
             f.write(json.dumps({
                 'valid'        : a_o_e_o_d('valid'),
                 'last_updated' : a_o_e_o_d('last_updated'),
+                'custom'       : a_o_e_o_d('custom'),
             }, cls=JSONDatetimeEncoder, indent=2))
 
 
@@ -153,8 +158,6 @@ class SerializableFileCache(Cache[_T]):
             self,
             name: str,
             getter: t.Callable[[], _T],
-            serialize: t.Callable[[_T], bytes],
-            deserialize: t.Callable[[bytes], _T],
             parents: t.List[Cacheable] = [],
             config_cache_path = _DEFAULT_CACHE_PATH,
             config_meta_path = Cache._DEFAULT_META_PATH,
@@ -162,13 +165,15 @@ class SerializableFileCache(Cache[_T]):
         super().__init__(name, parents, config_meta_path)
         self.__getter           = getter
         self._config_cache_path = config_cache_path
-        self._serialize         = serialize
-        self._deserialize       = deserialize
 
+    @abstractmethod
+    def _serialize(self, data: _T) -> bytes: raise NotImplementedError()
 
-    @property
-    def _cache_path(self):
-        return self._config_cache_path / f'{self.name}_data.json'
+    @abstractmethod
+    def _deserialize(self, data: bytes) -> _T: raise NotImplementedError()
+
+    @abstractproperty
+    def _cache_path(self) -> str: raise NotImplementedError()
 
     def _on_miss(self) -> None:
         data = self.__getter()
@@ -179,3 +184,37 @@ class SerializableFileCache(Cache[_T]):
     def _retrieve(self) -> _T:
         with open(self._cache_path, 'rb') as f:
             return self._deserialize(f.read())
+
+
+    @classmethod
+    def decorate(cls, func: _CallableT) -> _CallableT:
+        @functools.wraps(func)
+        def serializable_file_cache_inner(*args, **kwargs):
+            try:
+                json.dumps(args); json.dumps(kwargs)
+            except:
+                _LOG.critical(
+                    f'Could not serialize arguments as JSON: ' +
+                    f'{pformat({"args": args, "kwargs": kwargs})}'
+                )
+                raise
+
+            cache = cls(
+                f'{get_func_module(func)}.{func.__name__}',
+                lambda: func(*args, **kwargs)
+            )
+
+            params: t.Any = cache._get_meta()['custom'] or { 'args': [], 'kwargs': {} }
+            if params['args'] != list(args):
+                cache.invalidate()
+                _LOG.info(f'Cache invalidated, {pformat((args, params["args"]))}')
+            for key in kwargs.keys():
+                if params['kwargs'][key] != kwargs[key]:
+                    cache.invalidate()
+                    _LOG.info(f'Cache invalidated, {pformat((args, params["args"]))}')
+
+            cache._set_meta(custom={ 'args': args, 'kwargs': kwargs })
+
+            return cache.get()
+
+        return t.cast(_CallableT, serializable_file_cache_inner)
