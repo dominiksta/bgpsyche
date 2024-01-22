@@ -57,26 +57,26 @@ _stream_handler.setFormatter(ColorFormatter())
 # general
 # ----------------------------------------------------------------------
 
-logging.addLevelName(logging.INFO     , 'INF')
-logging.addLevelName(logging.DEBUG    , 'DBG')
-logging.addLevelName(logging.WARNING  , 'WRN')
-logging.addLevelName(logging.ERROR    , 'ERR')
-logging.addLevelName(logging.CRITICAL , 'CRT')
+def logging_setup():
+    for h in list(logging.root.handlers): logging.root.removeHandler(h)
 
-logging.basicConfig(
-    level=_LOG_LEVEL,
-    datefmt=_LOG_FORMAT_DATE,
-    handlers=[ _file_handler, _stream_handler ]
-)
+    logging.addLevelName(logging.INFO     , 'INF')
+    logging.addLevelName(logging.DEBUG    , 'DBG')
+    logging.addLevelName(logging.WARNING  , 'WRN')
+    logging.addLevelName(logging.ERROR    , 'ERR')
+    logging.addLevelName(logging.CRITICAL , 'CRT')
 
-def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger(name)
+    logging.basicConfig(
+        level=_LOG_LEVEL,
+        datefmt=_LOG_FORMAT_DATE,
+        handlers=[ _file_handler, _stream_handler ]
+    )
 
 # logging exceptions on exit
 # ----------------------------------------------------------------------
 
 def log_fatal(_type, _value, _traceback):
-    get_logger(__name__).critical(
+    logging.getLogger(__name__).critical(
         ''.join(traceback.format_exception(_type, _value, _traceback))
     )
 

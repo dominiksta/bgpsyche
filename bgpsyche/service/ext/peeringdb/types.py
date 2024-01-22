@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import typing as t
 
 ISODateTimeStr = str
@@ -34,7 +35,8 @@ NetworkScope = t.Literal[
     'South America', 'Africa', 'Australia', 'Middle East', 'Global'
 ]
 
-class Network(t.TypedDict):
+@dataclass
+class Network:
     id: int
     org_id: int
     name: str

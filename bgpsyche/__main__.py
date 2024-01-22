@@ -2,10 +2,12 @@ import argparse
 import logging
 from pprint import pprint
 
-from bgpsyche import logging_config
+from bgpsyche.logging_config import logging_setup
+from bgpsyche.service.ext import peeringdb
 from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.stage2_enrich.enrich import enrich_path
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 _parser = argparse.ArgumentParser()
@@ -18,7 +20,11 @@ _parser.add_argument(
     required=False
 )
 
+_parser.add_argument('--sync-peeringdb', action='store_true', required=False)
+
 _args = _parser.parse_args()
+
+if _args.sync_peeringdb: peeringdb.Client.sync()
 
 if _args.stage == '01_get_path_candidates':
     # 23673 23764 4134 4538 23910 24371

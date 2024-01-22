@@ -27,6 +27,9 @@ python3.10 -m venv .venv
 . .venv/bin/activate
 pip install -r bgpsyche/requirements.main.txt
 
+# this can take up to half an hour on the initial sync
+python -m bgpsyche --sync-peeringdb
+
 python -m bgpsyche --help
 ```
 

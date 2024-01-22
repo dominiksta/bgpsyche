@@ -7,11 +7,12 @@ from sklearn.metrics import f1_score, precision_score
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
-import bgpsyche.logging_config
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage2_enrich.enrich import enrich_path
 from bgpsyche.stage3_rank.make_dataset import make_path_level_dataset
 from bgpsyche.stage3_rank.vectorize_features import PATH_FEATURE_VECTOR_NAMES, vectorize_path_features
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 def test():

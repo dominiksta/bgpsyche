@@ -3,8 +3,10 @@ from datetime import datetime
 from pprint import pformat
 import typing as t
 
-import bgpsyche.logging_config
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.ext import ripe_ris
+
+logging_setup()
 
 def _research_compute_path_lengths():
     res: t.Dict[int, int] = defaultdict(int)

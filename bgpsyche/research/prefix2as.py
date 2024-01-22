@@ -4,7 +4,7 @@ import logging
 from pprint import pformat
 import typing as t
 
-import bgpsyche.logging_config
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.ext import ripe_ris, routeviews
 from bgpsyche.service.ext.prefix2as import (
     AS2Prefix, Prefix2AS, get_prefix2as_caida, get_prefix2as_from_custom
@@ -13,6 +13,7 @@ from bgpsyche.util.net.typ import IPNetwork
 
 # TODO: more better very much validation
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 

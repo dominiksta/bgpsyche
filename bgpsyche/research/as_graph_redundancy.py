@@ -3,14 +3,15 @@ import itertools
 import logging
 import typing as t
 
-import bgpsyche.logging_config
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.service.ext import ripe_ris, routeviews, mrt_custom
 from bgpsyche.service.bgp_graph import EDGE_LINK_COUNT, as_graphs_from_paths
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 _mkdate = datetime.fromisoformat
 

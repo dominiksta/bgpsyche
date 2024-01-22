@@ -7,7 +7,7 @@ import typing as t
 
 import numpy as np
 from bgpsyche.caching.json import JSONFileCache
-import bgpsyche.logging_config
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates.get_candidates import (
     PathCandidatesRes, abort_on_amount, abort_on_timeout, get_path_candidates
 )
@@ -18,6 +18,7 @@ from bgpsyche.util.const import JOBLIB_MEMORY
 from bgpsyche.service.ext import routeviews, ripe_ris
 from bgpsyche.util.run_in_pypy import run_in_pypy
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 _WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 3

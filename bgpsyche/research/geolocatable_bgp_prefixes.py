@@ -3,8 +3,8 @@ import functools
 import itertools
 import logging
 import typing as t
+from bgpsyche.logging_config import logging_setup
 
-import bgpsyche.logging_config
 from bgpsyche.service.ext import ripe_ris
 from bgpsyche.service.ext.maxmind_geoip2_lite import geoip2_find_network
 from bgpsyche.util.benchmark import bench_function
@@ -12,6 +12,7 @@ from bgpsyche.util.net.prefix_tree import (
     NetworkPrefixTreeV4, NetworkPrefixTreeV6, make_prefix_trees_for_list
 )
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 @functools.lru_cache

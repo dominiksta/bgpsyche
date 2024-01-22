@@ -9,12 +9,13 @@ from statistics import mean
 import typing as t
 from datetime import datetime
 
-import bgpsyche.logging_config
 import numpy as np
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage2_enrich.geographic_distance import geographic_distance_diff
 from bgpsyche.service.ext import ripe_ris, routeviews
 from bgpsyche.util.benchmark import Progress
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 _WORKER_SYSTEM_AVAILABLE_RAM = 16

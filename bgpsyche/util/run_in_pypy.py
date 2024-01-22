@@ -1,5 +1,4 @@
 import functools
-import inspect
 import json
 import logging
 from pathlib import Path
@@ -9,9 +8,9 @@ from sys import stdout
 import typing as t
 import subprocess
 from tempfile import NamedTemporaryFile
-from bgpsyche.caching.base import SerializableFileCache
 
-import bgpsyche.logging_config
+from bgpsyche.caching.base import SerializableFileCache
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.util.const import DATA_DIR, HERE
 from bgpsyche.util.platform import get_func_module
 
@@ -19,6 +18,7 @@ from bgpsyche.util.platform import get_func_module
 Here be dragons.
 """
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 _REPO_DIR = (HERE / '..').resolve()

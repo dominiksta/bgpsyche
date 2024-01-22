@@ -4,11 +4,12 @@ from datetime import datetime
 import itertools
 
 import networkx as nx
-import bgpsyche.logging_config
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.bgp_graph import as_graphs_from_paths
 from bgpsyche.service.ext import ripe_ris, routeviews, mrt_custom
 from bgpsyche.service.mrt_file_parser import ASPathMeta
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 # helpers

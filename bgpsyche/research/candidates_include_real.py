@@ -8,13 +8,14 @@ import logging
 import statistics
 from os import cpu_count
 
-import bgpsyche.logging_config
 import numpy as np
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.service.ext import ripe_ris, routeviews
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import HERE
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 _WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 2

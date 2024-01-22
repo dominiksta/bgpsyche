@@ -5,3 +5,7 @@ requests-toolbelt===1.0.0
 networkx===3.2.1
 editdistance===0.6.1
 numpy==1.22.0
+
+django-peeringdb==3.2.0
+peeringdb==2.0.0
+django>=4.2,<4.3
