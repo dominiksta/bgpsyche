@@ -9,10 +9,10 @@ import numpy as np
 from bgpsyche.caching.json import JSONFileCache
 import bgpsyche.logging_config
 from bgpsyche.stage1_candidates.get_candidates import (
-    abort_on_amount, abort_on_timeout, get_path_candidates
+    PathCandidatesRes, abort_on_amount, abort_on_timeout, get_path_candidates
 )
-from bgpsyche.stage2_enrich.enrich import enrich_path
-from bgpsyche.stage3_rank.vectorize_features import vectorize_features
+from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_path
+from bgpsyche.stage3_rank.vectorize_features import vectorize_as_features, vectorize_path_features
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import JOBLIB_MEMORY
 from bgpsyche.service.ext import routeviews, ripe_ris
@@ -38,24 +38,14 @@ def _get_path_candidates_worker(path: t.List[int]):
     ), path
 
 
-class PathDatasetEl(t.TypedDict):
-    real: bool
-    path_features: t.List[t.Union[int, float]]
-
-
-@run_in_pypy(cache=JSONFileCache)
-def make_path_dataset(
-        candidates_per_real_path = 1,
-        real_paths_n = 10_000,
-        routeviews_dts: t.List[str] = [
-            '2023-05-01T00:00',
-        ],
-        ripe_ris_dts: t.List[str] = [
-            '2023-05-01T00:00',
-        ],
-) -> t.List[PathDatasetEl]:
+def _iter_path_with_alternatives(
+        candidates_per_real_path: int,
+        real_paths_n: int,
+        routeviews_dts: t.List[str],
+        ripe_ris_dts: t.List[str],
+        progress_msg = 'Preparing Dataset',
+) -> t.Iterator[t.Tuple[t.List[int], t.List[t.List[int]]]]:
     real_paths: t.List[t.List[int]] = []
-    out: t.List[PathDatasetEl] = []
 
     _LOG.info('Loading paths into memory...')
 
@@ -78,10 +68,7 @@ def make_path_dataset(
     np.random.shuffle(real_paths)
     real_paths = real_paths[:real_paths_n]
 
-    prg = Progress(
-        int(len(real_paths) / _WORKER_CHUNKSIZE),
-        'Mixing real paths with false candidates'
-    )
+    prg = Progress(int(len(real_paths) / _WORKER_CHUNKSIZE), progress_msg)
 
     # HACK: initialize cache in main process
     get_path_candidates(3320, 3320)
@@ -95,28 +82,91 @@ def make_path_dataset(
             iter += 1
             resp, path = w_resp
             np.random.shuffle(resp['candidates'])
-            iter_candidates = 0
+            out_candidates = []
             for candidate in resp['candidates']:
                 if candidate == path: continue
-                if iter_candidates >= candidates_per_real_path: break
-                iter_candidates += 1
-                out.append({
-                    'path_features': vectorize_features(enrich_path(candidate)),
-                    'real': False,
-                })
+                if len(out_candidates) >= candidates_per_real_path: break
+                out_candidates.append(candidate)
 
-            out.append({
-                'path_features': vectorize_features(enrich_path(path)),
-                'real': True,
-            })
+            yield path, out_candidates
 
-            if iter % _WORKER_CHUNKSIZE == 0:
-                prg.update()
+            if iter % _WORKER_CHUNKSIZE == 0: prg.update()
 
         prg.complete()
 
 
+# path level
+# ----------------------------------------------------------------------
+
+class DatasetPathLevelEl(t.TypedDict):
+    real: bool
+    path_features: t.List[t.Union[int, float]]
+
+@run_in_pypy(cache=JSONFileCache)
+def make_path_level_dataset(
+        candidates_per_real_path = 1,
+        real_paths_n = 10_000,
+        routeviews_dts: t.List[str] = [
+            '2023-05-01T00:00',
+        ],
+        ripe_ris_dts: t.List[str] = [
+            '2023-05-01T00:00',
+        ],
+) -> t.List[DatasetPathLevelEl]:
+    out: t.List[DatasetPathLevelEl] = []
+    for real, alternatives in _iter_path_with_alternatives(
+            candidates_per_real_path=candidates_per_real_path,
+            real_paths_n=real_paths_n,
+            routeviews_dts=routeviews_dts,
+            ripe_ris_dts=ripe_ris_dts,
+    ):
+        for alternative in alternatives:
+            out.append({
+                'path_features': vectorize_path_features(enrich_path(alternative)),
+                'real': False,
+            })
+
+        out.append({
+            'path_features': vectorize_path_features(enrich_path(real)),
+            'real': True,
+        })
+
     return out
 
+# as level
+# ----------------------------------------------------------------------
 
-if __name__ == '__main__': make_path_dataset()
+class DatasetASLevelEl(t.TypedDict):
+    real: bool
+    as_features: t.List[t.List[t.Union[int, float]]]
+
+@run_in_pypy(cache=JSONFileCache)
+def make_as_level_dataset(
+        candidates_per_real_path = 1,
+        real_paths_n = 10_000,
+        routeviews_dts: t.List[str] = [
+            '2023-05-01T00:00',
+        ],
+        ripe_ris_dts: t.List[str] = [
+            '2023-05-01T00:00',
+        ],
+) -> t.List[DatasetASLevelEl]:
+    out: t.List[DatasetASLevelEl] = []
+    for real, alternatives in _iter_path_with_alternatives(
+            candidates_per_real_path=candidates_per_real_path,
+            real_paths_n=real_paths_n,
+            routeviews_dts=routeviews_dts,
+            ripe_ris_dts=ripe_ris_dts,
+    ):
+        for alternative in alternatives:
+            out.append({'real': False, 'as_features': [
+                vectorize_as_features(enrich_asn(asn)) for asn in alternative
+            ]})
+
+        out.append({'real': True, 'as_features': [
+            vectorize_as_features(enrich_asn(asn)) for asn in real
+        ]})
+
+    return out
+
+if __name__ == '__main__': make_path_level_dataset()

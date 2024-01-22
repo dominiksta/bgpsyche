@@ -4,7 +4,7 @@ import typing as t
 import torch
 from torch import nn
 from sklearn.model_selection import train_test_split
-from bgpsyche.stage3_rank.make_dataset import make_path_dataset
+from bgpsyche.stage3_rank.make_dataset import make_path_level_dataset
 from torcheval.metrics.functional import (
     binary_accuracy, binary_recall, binary_precision, binary_f1_score
 )
@@ -105,7 +105,7 @@ def train(X: torch.Tensor, y: torch.Tensor):
 
 def _test():
 
-    dataset = make_path_dataset()
+    dataset = make_path_level_dataset()
     X = torch.tensor(
         [ p['path_features'] for p in dataset ],
         dtype=torch.float32, device=device

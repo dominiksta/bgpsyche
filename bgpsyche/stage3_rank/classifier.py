@@ -9,8 +9,8 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
 import bgpsyche.logging_config
 from bgpsyche.stage2_enrich.enrich import enrich_path
-from bgpsyche.stage3_rank.make_dataset import make_path_dataset
-from bgpsyche.stage3_rank.vectorize_features import FEATURE_VECTOR_NAMES, vectorize_features
+from bgpsyche.stage3_rank.make_dataset import make_path_level_dataset
+from bgpsyche.stage3_rank.vectorize_features import PATH_FEATURE_VECTOR_NAMES, vectorize_path_features
 
 _LOG = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def test():
     # python3.9 though.
     classifier = DecisionTreeClassifier(random_state=rng)
 
-    dataset = make_path_dataset()
+    dataset = make_path_level_dataset()
     X = [ p['path_features'] for p in dataset ]
     y = [ int(p['real']) for p in dataset ]
     _LOG.info('Got training data set')
@@ -52,7 +52,7 @@ def test():
 
     def classify(path: t.List[int]) -> bool:
         return classifier.predict([
-            vectorize_features(enrich_path(path))
+            vectorize_path_features(enrich_path(path))
         ]) == 1
 
     # first path of each block is correct, others have random manually edited

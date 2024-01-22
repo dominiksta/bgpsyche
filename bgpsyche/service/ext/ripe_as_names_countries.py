@@ -39,7 +39,6 @@ def get_all_ripe_as_names_countries() -> t.Mapping[int, ASBasicInfo]:
             if line.startswith('23456 AS_TRANS'): continue
             last_comma, first_space = line.rfind(','), line.find(' ')
             country = t.cast(AsnTxtCountryCode, line[last_comma+2:-1])
-            if country in count_as_unknown: country = 'UNKNOWN'
             if country not in count_as_unknown \
                and country not in ALPHA2_OFFICIAL \
                and country not in ALPHA2_TRANSITIONAL \
@@ -48,6 +47,7 @@ def get_all_ripe_as_names_countries() -> t.Mapping[int, ASBasicInfo]:
                     f'Weird alpha-2 code, counting as unknown: {country}'
                 )
                 country = 'UNKNOWN'
+            if country in count_as_unknown: country = 'UNKNOWN'
             asn = int(line[:first_space])
             name = line[first_space+1:last_comma]
             out[asn] = { 'name': name, 'country': country }
