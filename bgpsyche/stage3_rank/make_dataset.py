@@ -45,7 +45,7 @@ class PathDatasetEl(t.TypedDict):
 
 @run_in_pypy(cache=JSONFileCache)
 def make_path_dataset(
-        candidates_per_real_path = 10,
+        candidates_per_real_path = 1,
         real_paths_n = 10_000,
         routeviews_dts: t.List[str] = [
             '2023-05-01T00:00',
@@ -98,8 +98,8 @@ def make_path_dataset(
             iter_candidates = 0
             for candidate in resp['candidates']:
                 if candidate == path: continue
-                iter_candidates += 1
                 if iter_candidates >= candidates_per_real_path: break
+                iter_candidates += 1
                 out.append({
                     'path_features': vectorize_features(enrich_path(candidate)),
                     'real': False,

@@ -98,8 +98,8 @@ def _path_alternatives(
                 raise
 
         if stop:
-            _LOG.warning(
-                f'Found more then {max_out} path alternatives ({len(found)}), ' +
+            _LOG.debug(
+                f'Found more then {max_out} path alternatives, ' +
                 f'ignoring any further paths'
             )
             # print(len(found), it_l)

@@ -1,4 +1,6 @@
 {
-    "reportMissingImports": "warning",
-    "reportOptionalMemberAccess": false
+  "reportMissingImports": "warning",
+  "reportOptionalMemberAccess": false,
+  "exclude": [".venv-pypy", ".venv", ".git", "bgpsyche/data"],
+  "include": ["bgpsyche"]
 }

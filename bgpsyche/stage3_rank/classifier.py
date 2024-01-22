@@ -3,8 +3,10 @@ import statistics
 import typing as t
 
 import numpy as np
+from sklearn.metrics import f1_score, precision_score
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.neural_network import MLPClassifier
 import bgpsyche.logging_config
 from bgpsyche.stage2_enrich.enrich import enrich_path
 from bgpsyche.stage3_rank.make_dataset import make_path_dataset
@@ -15,7 +17,8 @@ _LOG = logging.getLogger(__name__)
 def test():
     rng = np.random.RandomState(42)
 
-    # TODO: try other classifiers and *auto-sklearn*
+    # TODO: try other classifiers and *auto-sklearn*. auto-sklearn only works in
+    # python3.9 though.
     classifier = DecisionTreeClassifier(random_state=rng)
 
     dataset = make_path_dataset()
@@ -34,16 +37,17 @@ def test():
 
     _LOG.info('Scoring classifier...')
     score = classifier.score(X_test, y_test)
-    _LOG.info(f'Classifier score: {score}')
+    f1 = f1_score(classifier.predict(X_test), y_test)
+    prec = precision_score(classifier.predict(X_test), y_test)
+    _LOG.info(f'Classifier score: {score}, F1: {f1}, P: {prec}')
 
-
-    print(abs(statistics.correlation(
-        [
-            features[FEATURE_VECTOR_NAMES.index('geographic_distance_diff')]
-            for features in X
-        ],
-        list(y)
-    )))
+    # print(abs(statistics.correlation(
+    #     [
+    #         features[FEATURE_VECTOR_NAMES.index('geographic_distance_diff')]
+    #         for features in X
+    #     ],
+    #     list(y)
+    # )))
 
 
     def classify(path: t.List[int]) -> bool:

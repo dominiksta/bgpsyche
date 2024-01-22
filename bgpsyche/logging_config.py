@@ -6,6 +6,8 @@ from datetime import datetime
 import os
 from pathlib import Path
 
+_LOG_LEVEL = logging.INFO
+
 _LOG_FORMAT = (
     '%(asctime)s %(levelname)-3s [%(module)s] ' +
     ('' if python_implementation() == 'CPython' else '[PyPy] ') +
@@ -62,7 +64,7 @@ logging.addLevelName(logging.ERROR    , 'ERR')
 logging.addLevelName(logging.CRITICAL , 'CRT')
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=_LOG_LEVEL,
     datefmt=_LOG_FORMAT_DATE,
     handlers=[ _file_handler, _stream_handler ]
 )
