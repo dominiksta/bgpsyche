@@ -1,5 +1,4 @@
 from datetime import datetime
-import functools
 import logging
 import multiprocessing
 from os import cpu_count
@@ -9,12 +8,11 @@ import numpy as np
 from bgpsyche.caching.json import JSONFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates.get_candidates import (
-    PathCandidatesRes, abort_on_amount, abort_on_timeout, get_path_candidates
+    abort_on_amount, abort_on_timeout, get_path_candidates
 )
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_path
 from bgpsyche.stage3_rank.vectorize_features import vectorize_as_features, vectorize_path_features
 from bgpsyche.util.benchmark import Progress
-from bgpsyche.util.const import JOBLIB_MEMORY
 from bgpsyche.service.ext import routeviews, ripe_ris
 from bgpsyche.util.run_in_pypy import run_in_pypy
 
@@ -101,6 +99,7 @@ def _iter_path_with_alternatives(
 
 class DatasetPathLevelEl(t.TypedDict):
     real: bool
+    path: t.List[int]
     path_features: t.List[t.Union[int, float]]
 
 @run_in_pypy(cache=JSONFileCache)
@@ -124,12 +123,12 @@ def make_path_level_dataset(
         for alternative in alternatives:
             out.append({
                 'path_features': vectorize_path_features(enrich_path(alternative)),
-                'real': False,
+                'path': alternative, 'real': False,
             })
 
         out.append({
             'path_features': vectorize_path_features(enrich_path(real)),
-            'real': True,
+            'path': real, 'real': True,
         })
 
     return out
@@ -139,12 +138,13 @@ def make_path_level_dataset(
 
 class DatasetASLevelEl(t.TypedDict):
     real: bool
+    path: t.List[int]
     as_features: t.List[t.List[t.Union[int, float]]]
 
 @run_in_pypy(cache=JSONFileCache)
 def make_as_level_dataset(
         candidates_per_real_path = 1,
-        real_paths_n = 10_000,
+        real_paths_n = 100_000,
         routeviews_dts: t.List[str] = [
             '2023-05-01T00:00',
         ],
@@ -160,11 +160,11 @@ def make_as_level_dataset(
             ripe_ris_dts=ripe_ris_dts,
     ):
         for alternative in alternatives:
-            out.append({'real': False, 'as_features': [
+            out.append({'real': False, 'path': alternative, 'as_features': [
                 vectorize_as_features(enrich_asn(asn)) for asn in alternative
             ]})
 
-        out.append({'real': True, 'as_features': [
+        out.append({'real': True, 'path': real, 'as_features': [
             vectorize_as_features(enrich_asn(asn)) for asn in real
         ]})
 

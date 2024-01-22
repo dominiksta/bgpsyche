@@ -30,7 +30,7 @@ class JSONFileCache(base.SerializableFileCache[JSONSerializable]):
         return self._config_cache_path / f'{self.name}_data.json'
 
     def _serialize(self, data):
-        return json.dumps(data).encode('UTF-8')
+        return json.dumps(data, indent=2).encode('UTF-8')
 
     def _deserialize(self, data):
         return json.loads(data.decode('UTF-8'))
