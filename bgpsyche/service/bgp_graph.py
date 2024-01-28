@@ -5,9 +5,10 @@ import functools
 import logging
 
 import networkx as nx
+from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.service.mrt_file_parser import ASPathMeta
-from bgpsyche.util.const import JOBLIB_MEMORY
 from bgpsyche.service.ext import ripe_ris, routeviews
+from bgpsyche.util.run_in_pypy import run_in_pypy
 
 _LOG = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def as_graphs_from_paths(
 
 
 @functools.lru_cache()
-@JOBLIB_MEMORY.cache
+@run_in_pypy(cache=PickleFileCache)
 def as_graph_from_ext(
         routeviews_dts = [
             datetime.fromisoformat('2023-05-01T00:00')

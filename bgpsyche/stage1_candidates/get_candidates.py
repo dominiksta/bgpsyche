@@ -35,19 +35,23 @@ class _GetPathCandidatesAbortConditions(t.TypedDict):
 
 def get_path_candidates(
         source: int, sink: int,
-        abort_on: t.List[_GetPathCandidatesAbortConditions] = [
-            { 'func': abort_on_timeout(5), 'desc': 'timeout 5s' },
-            { 'func': abort_on_amount(4000), 'desc': 'amount 4k' },
-        ],
+        abort_on: t.Union[
+            t.Literal['default'],
+            t.List[_GetPathCandidatesAbortConditions]
+        ] = 'default',
         quiet: bool = False,
         unordered: bool = False,
 ) -> PathCandidatesRes:
     if not quiet: _LOG.info(f'Getting Path Candidates {source}->{sink}')
-    as_graph = as_graph_from_ext()
+    as_graph  = t.cast(nx.Graph, as_graph_from_ext())
+    if abort_on == 'default': abort_on = [
+            { 'func': abort_on_timeout(5), 'desc': 'timeout 5s' },
+            { 'func': abort_on_amount(4000), 'desc': 'amount 4k' },
+    ]
 
     paths_iter = {
-        False: nx.all_simple_paths(as_graph, source, sink, cutoff=8),
-        True: nx.shortest_simple_paths(as_graph, source, sink),
+        True: nx.all_simple_paths(as_graph, source, sink, cutoff=8),
+        False: nx.shortest_simple_paths(as_graph, source, sink),
     }[unordered]
 
     candidates: t.List[t.List[int]] = []
