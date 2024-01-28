@@ -46,7 +46,7 @@ def as_graphs_from_paths(
 
 
 @functools.lru_cache()
-@run_in_pypy(cache=PickleFileCache)
+@PickleFileCache.decorate
 def as_graph_from_ext(
         routeviews_dts = [
             datetime.fromisoformat('2023-05-01T00:00')

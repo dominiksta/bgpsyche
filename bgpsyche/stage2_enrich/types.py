@@ -48,7 +48,7 @@ class PathFeatures(t.TypedDict):
     # - If the unlocatable hop is the source or destination AS, we will use the
     #   average final value of `geographic_distance_diff` for all paths, which
     #   is 175km.
-    geographic_distance_diff: float
+    # geographic_distance_diff: float
     # # The amount of peaks in the asrank curve.
     # asrank_peaks: int
     asrank_variance: float

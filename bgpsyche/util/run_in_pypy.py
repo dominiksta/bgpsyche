@@ -85,16 +85,17 @@ def run_in_pypy(
 import importlib
 import json
 import logging
-import bgpsyche.logging_config
-import bgpsyche.caching                
+from bgpsyche.logging_config import logging_setup
+import bgpsyche.caching
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 # _LOG.info('hi')
 importlib.import_module('{module}')
 
 with open('{f_params.name}', 'rb') as f:
     params = json.loads(f.read().decode('utf-8'))
-    
+
 if {cache is None}:
     ret = {module}.{func.__name__}(*params['args'], **params['kwargs'])
     with open('{f_return.name}', 'wb') as f:
@@ -130,7 +131,7 @@ else:
                     ret = _cache.get() # type: ignore
 
                 return ret
-            
+
         return t.cast(_CallableT, run_in_pypy_inner)
     return t.cast(t.Any, run_in_pypy_wrapper)
 

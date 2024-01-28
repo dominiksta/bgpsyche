@@ -1,56 +1,121 @@
+from datetime import datetime
 from statistics import mean
+import random
+from os import cpu_count
 import typing as t
 import logging
 
-import numpy as np
+import multiprocessing
 
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
+from bgpsyche.stage3_rank.classifier_rnn import predict_probs as predict_probs_rnn
+from bgpsyche.service.ext import routeviews, mrt_custom
 
 _LOG = logging.getLogger(__name__)
+
+_PREDICT_FUN = predict_probs_rnn
+
+_WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 3
+_WORKER_CHUNKSIZE = 1
 
 class _PathWithProb(t.TypedDict):
     path: t.List[int]
     prob: float
 
+class _RealLifeEvalModelWorkerResp(t.TypedDict):
+    candidates_length: int
+    found_position: int
+    path: t.List[int]
 
-# def _real_life_eval_model_worker(args):
-#     path: t.List[int] = args[0]
+def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
+
+    candidates = list(get_path_candidates(path[0], path[-1])['candidates'])
+    if path not in candidates:
+        _LOG.info('skipping bc not in candidates')
+        return {
+            'candidates_length': len(candidates),
+            'found_position': -1, 'path': path,
+        }
+
+    probs: t.List[_PathWithProb] = [
+        { 'path': candidates[i], 'prob': prob }
+        for i, prob in enumerate(_PREDICT_FUN(candidates))
+    ]
+    probs.sort(key=lambda el: el['prob'], reverse=True)
+    candidates_probs = [ p['path'] for p in probs ]
+
+    return {
+        'candidates_length': len(candidates_probs),
+        'found_position': candidates_probs.index(path),
+        'path': path,
+    }
 
 
 def real_life_eval_model(
         real_paths: t.List[t.List[int]],
-        predict_probs: t.Callable[
-            [t.List[t.List[int]]],
-            t.List[float]
-        ],
 ):
-    np.random.shuffle(real_paths)
+    random.shuffle(real_paths)
     found_positions: t.List[float] = []
     candidate_lengths: t.List[int] = []
     iter = 0
-    for path in real_paths:
-        iter += 1
 
-        candidates = list(get_path_candidates(path[0], path[-1])['candidates'])
-        if path not in candidates:
-            _LOG.info('skipping bc not in candidates')
-            continue
+    # HACK: initialize cache in main process
+    get_path_candidates(3320, 3320)
 
-        probs: t.List[_PathWithProb] = [
-            { 'path': candidates[i], 'prob': prob }
-            for i, prob in enumerate(predict_probs(candidates))
-        ]
-        probs.sort(key=lambda el: el['prob'], reverse=True)
-        candidates_probs = [ p['path'] for p in probs ]
+    with multiprocessing.Pool(_WORKER_PROCESSES_AMNT) as p:
 
-        candidate_lengths.append(len(candidates_probs))
-        found_positions.append(candidates_probs.index(path))
+        iter = 0
+        skipped = 0
+        for w_resp in p.imap_unordered(
+            _real_life_eval_model_worker, real_paths,
+            chunksize=_WORKER_CHUNKSIZE
+        ):
+            iter += 1
+            if w_resp['found_position'] == -1:
+                skipped += 1
+                continue
 
-        avg_found = round(mean(found_positions), 2)
-        avg_len = round(mean(candidate_lengths))
-        _LOG.info(
-            f'Pos: {found_positions[-1]}, Avg Pos: {avg_found} | ' +
-            f'Len: {candidate_lengths[-1]}, Avg Len: {avg_len} | ' +
-            f'Top 10: {path in candidates_probs[:10]} | ' +
-            f'{path}'
+            candidate_lengths.append(w_resp['candidates_length'])
+            found_positions.append(w_resp['found_position'])
+
+            if iter % 10 == 0:
+                avg_found = round(mean(found_positions), 2)
+                avg_len = round(mean(candidate_lengths))
+                percent_correct = round(
+                    (found_positions.count(0) / len(found_positions)) * 100
+                )
+                percent_correct_real = round((
+                    found_positions.count(0) / (len(found_positions) + skipped)
+                ) * 100)
+                percent_top_3_real = round((
+                    sum([found_positions.count(i) for i in [0, 1, 2]])
+                    / (len(found_positions) + skipped)
+                ) * 100)
+                percent_skipped = round((skipped / iter) * 100)
+                _LOG.info(
+                    f'I: {iter} | ' +
+                    f'C: {percent_correct} CR: {percent_correct_real} ' +
+                    f'C3: {percent_top_3_real} | ' +
+                    f'S: {percent_skipped} | ' +
+                    f'Pos: {found_positions[-1]}, Avg Pos: {avg_found} | ' +
+                    f'Len: {candidate_lengths[-1]}, Avg Len: {avg_len} | ' +
+                    f'Top 10: {w_resp["found_position"] < 10} | ' +
+                    f'{w_resp["path"]}'
+                )
+
+
+def _main():
+
+    real_paths = list(
+        meta['path'] for meta in
+        # mrt_custom.iter_paths('mrt_dtag', eliminate_path_prepending=True,)
+        routeviews.iter_paths(
+            datetime.fromisoformat('2023-05-02T00:00'),
+            eliminate_path_prepending=True,
+            # collectors=['decix.jhb'],
         )
+    )
+
+    real_life_eval_model(real_paths)
+
+if __name__ == '__main__': _main()

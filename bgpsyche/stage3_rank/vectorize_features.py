@@ -7,8 +7,8 @@ PATH_FEATURE_VECTOR_NAMES: t.List[str] = [
     'length',
     'is_valley_free',
     'longest_real_snippet_diff',
-    'asrank_variance',
-    'geographic_distance_diff',
+    # 'asrank_variance',
+    # 'geographic_distance_diff',
 ]
 
 def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float]]:
@@ -17,8 +17,8 @@ def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float
         0 if features['is_valley_free'] is None
         else int(features['is_valley_free']),
         features['longest_real_snippet_diff'],
-        features['asrank_variance'],
-        features['geographic_distance_diff'],
+        # features['asrank_variance'],
+        # features['geographic_distance_diff'],
     ]
 
 AS_FEATURE_VECTOR_NAMES: t.List[str] = [
