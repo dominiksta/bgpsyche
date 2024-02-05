@@ -31,6 +31,7 @@ _routeviews_for_date = \
 def _bgp_prefix_tree():
     cache = PickleFileCache(
         'bgp_prefix_tree_snippet_length',
+        # TODO: insert path snippets from any starting point
         lambda: PrefixTree.from_iter(
             path_meta['path'] for path_meta in (itertools.chain(
                 _ris_for_date('2023-05-01T00:00'),

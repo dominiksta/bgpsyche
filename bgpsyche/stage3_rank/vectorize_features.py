@@ -1,14 +1,14 @@
 import typing as t
+from time import mktime
 
 import numpy as np
 from bgpsyche.stage2_enrich.types import ASFeaturesRaw, PathFeatures
 
+# TODO: evaluate new rnn on AS-triplet level
+
 PATH_FEATURE_VECTOR_NAMES: t.List[str] = [
     'length',
     'is_valley_free',
-    'longest_real_snippet_diff',
-    # 'asrank_variance',
-    # 'geographic_distance_diff',
 ]
 
 def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float]]:
@@ -16,25 +16,21 @@ def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float
         features['length'],
         0 if features['is_valley_free'] is None
         else int(features['is_valley_free']),
-        features['longest_real_snippet_diff'],
-        # features['asrank_variance'],
-        # features['geographic_distance_diff'],
     ]
 
 AS_FEATURE_VECTOR_NAMES: t.List[str] = [
-    # 'asn',
-    # 'ripe_name',
     # 'ripe_country',
     'as_rank',
-    # 'peeringdb_type',
-    'peeringdb_prefix_count_v4',
-    'peeringdb_prefix_count_v6',
-    # 'peeringdb_geographic_scope',
+    'rirstat_born',
+    'rirstat_addr_count_v4',
+    'rirstat_addr_count_v6',
 ]
 
 def vectorize_as_features(features: ASFeaturesRaw) -> t.List[t.Union[int, float]]:
     return [
         features['as_rank'],
-        features['peeringdb_prefix_count_v4'] or -1,
-        features['peeringdb_prefix_count_v6'] or -1,
+        mktime(features['rirstat_born'].timetuple())
+        if features['rirstat_born'] is not None else -1,
+        features['rirstat_addr_count_v4'] or -1,
+        features['rirstat_addr_count_v6'] or -1,
     ]

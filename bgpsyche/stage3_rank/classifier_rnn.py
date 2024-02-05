@@ -188,7 +188,7 @@ _cpu_model = _RNN().to('cpu')
 def predict_probs(paths: t.List[t.List[int]]) -> t.List[float]:
     global _model_ready, _device
     if not _model_ready:
-        if not _model_file_path.exists(): _ready_model()
+        if not _model_file_path.exists(): ready_model()
         _cpu_model.load_state_dict(torch.load(_model_file_path, map_location='cpu'))
         _device = 'cpu'
         _model_ready = True
@@ -207,7 +207,7 @@ def predict_probs(paths: t.List[t.List[int]]) -> t.List[float]:
     return ret
 
 
-def _ready_model():
+def ready_model():
     test_split = 0.2
     dataset = make_dataset()
     _LOG.info(f'Got dataset with {len(dataset)} paths')

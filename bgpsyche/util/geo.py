@@ -61,7 +61,7 @@ ALPHA2_TRANSITIONAL: t.Set[Alpha2Transitional] = \
     set(t.get_args(Alpha2Transitional))
 
 Alpha2UserAssignedCommon = t.Literal[
-    'XK',
+    'XK', 'AP',
 ]
 ALPHA2_USER_ASSIGNED_COMMON: t.Set[Alpha2UserAssignedCommon] = \
     set(t.get_args(Alpha2UserAssignedCommon))
@@ -102,6 +102,8 @@ COUNTRY_INFO: t.Dict[Alpha2WithLocation, CountryInfo] = {
     'AL': { 'name': 'Albania', 'lat': 41.0, 'lon': 20.0 },
     'AM': { 'name': 'Armenia', 'lat': 40.0, 'lon': 45.0 },
     'AO': { 'name': 'Angola', 'lat': -12.5, 'lon': 18.5 },
+    # a rough estimate, coordinates taken from the Central African Republic
+    'AP': { 'name': 'African Regional Intellectual Property Organization', 'lat': 7.0, 'lon': 21.0 },
     'AQ': { 'name': 'Antarctica', 'lat': -90.0, 'lon': 0.0 },
     'AR': { 'name': 'Argentina', 'lat': -34.0, 'lon': -64.0 },
     'AS': { 'name': 'American Samoa', 'lat': -14.3333, 'lon': -170.0 },

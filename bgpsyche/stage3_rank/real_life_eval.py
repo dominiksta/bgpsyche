@@ -8,12 +8,12 @@ import logging
 import multiprocessing
 
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
-from bgpsyche.stage3_rank.classifier_rnn import predict_probs as predict_probs_rnn
+from bgpsyche.stage3_rank import classifier_rnn
 from bgpsyche.service.ext import routeviews, mrt_custom
 
 _LOG = logging.getLogger(__name__)
 
-_PREDICT_FUN = predict_probs_rnn
+_PREDICT_FUN = classifier_rnn.predict_probs
 
 _WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 3
 _WORKER_CHUNKSIZE = 1
@@ -29,7 +29,9 @@ class _RealLifeEvalModelWorkerResp(t.TypedDict):
 
 def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
 
-    candidates = list(get_path_candidates(path[0], path[-1])['candidates'])
+    candidates = list(get_path_candidates(
+        path[0], path[-1], quiet=True
+    )['candidates'])
     if path not in candidates:
         _LOG.info('skipping bc not in candidates')
         return {
@@ -105,6 +107,7 @@ def real_life_eval_model(
 
 
 def _main():
+    _PREDICT_FUN([[3320, 3320]])
 
     real_paths = list(
         meta['path'] for meta in
