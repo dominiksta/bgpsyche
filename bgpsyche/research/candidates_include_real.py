@@ -13,7 +13,9 @@ from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.service.ext import ripe_ris, routeviews
-from bgpsyche.stage1_candidates.get_candidates import abort_on_amount, abort_on_timeout
+from bgpsyche.stage1_candidates.get_candidates import (
+    abort_on_amount, abort_on_timeout, weight_by_relationship
+)
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import HERE
 from bgpsyche.util.run_in_pypy import run_in_pypy
@@ -30,17 +32,35 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[
 ]:
     path: t.List[int] = args[0]
     before = time()
-    candidates = get_path_candidates(
+
+    candidates_base = get_path_candidates(
         path[0], path[-1],
         abort_on=lambda: [
-            { 'func': lambda p: p == path, 'desc': 'path eq' },
-            { 'func': abort_on_timeout(20), 'desc': 'timeout 20s' },
-            { 'func': abort_on_amount(4000), 'desc': 'amount 4k' },
+            { 'func': lambda p: p == path, 'desc': 'path eq [base]' },
+            { 'func': abort_on_timeout(5), 'desc': 'timeout 5s [base]' },
+            { 'func': abort_on_amount(4000), 'desc': 'amount 4k [base]' },
         ],
         # quiet=True,
     )['candidates']
-    if path in candidates:
-        return True, candidates.index(path), path, round(time() - before, 2)
+
+    # candidates_add = get_path_candidates(
+    #     path[0], path[-1],
+    #     abort_on=lambda: [
+    #         { 'func': lambda p: p == path, 'desc': 'path eq [weight]' },
+    #         { 'func': abort_on_timeout(5), 'desc': 'timeout 5s [weight]' },
+    #         { 'func': abort_on_amount(4000), 'desc': 'amount 4k [weight]' },
+    #     ],
+    #     weight=weight_by_relationship(path[-1]),
+    # )['candidates']
+
+    candidates_add = []
+
+    for candidate in candidates_add:
+        if candidate not in candidates_base:
+            candidates_base.append(candidate)
+
+    if path in candidates_base:
+        return True, candidates_base.index(path), path, round(time() - before, 2)
     else:
         # _LOG.info(f'Path not found: {path}')
         return False, None, path, 0.0
