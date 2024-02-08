@@ -101,7 +101,7 @@ if {cache is None}:
     with open('{f_return.name}', 'wb') as f:
         f.write(json.dumps(ret).encode('utf-8'))
 else:
-    bgpsyche.caching.{cache.__name__}(
+    bgpsyche.caching.{cache.__name__ if cache is not None else 'Nope'}(
         '{module}.{func.__name__}',
         lambda: {module}.{func.__name__}(*params['args'], **params['kwargs'])
     ).get()

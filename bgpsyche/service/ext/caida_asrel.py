@@ -2,7 +2,7 @@ import functools
 import typing as t
 import bz2
 from collections import defaultdict
-from datetime import datetime
+from datetime import date
 import logging
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from bgpsyche.util.net import download_file_cached
 _LOG = logging.getLogger(__name__)
 
 
-def download_caida_asrel(date: datetime) -> Path:
+def download_caida_asrel(date: date) -> Path:
     file = f'{date.strftime("%Y%m%d")}.as-rel.txt.bz2'
     # TODO: difference between serial-1 and serial-2 ?
     return download_file_cached(
@@ -30,7 +30,7 @@ _num2relationship: t.Dict[int, RelationshipKind] = { 1: 'c2p', 0: 'p2p', -1: 'p2
 
 @functools.lru_cache()
 def get_caida_asrel(
-        date: datetime,
+        date: date,
         enforce_t1 = True,
 ) -> Source2Sink2Rel:
     s2s2r: Source2Sink2Rel = defaultdict(dict)

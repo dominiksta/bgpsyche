@@ -36,7 +36,6 @@ def _get_path_candidates_worker(path: t.List[int]):
             # TODO: set to 200 ^^20231221-133927 Research Log_ BGPsyche Candidate Search^^
             { 'func': abort_on_amount(200), 'desc': 'found 50' },
         ],
-        unordered=True,
         # quiet=True,
     ), path
 

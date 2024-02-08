@@ -1,4 +1,5 @@
 import itertools
+import random
 import multiprocessing
 import json
 from time import time
@@ -8,18 +9,20 @@ import logging
 import statistics
 from os import cpu_count
 
-import numpy as np
+from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.service.ext import ripe_ris, routeviews
+from bgpsyche.stage1_candidates.get_candidates import abort_on_amount, abort_on_timeout
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import HERE
+from bgpsyche.util.run_in_pypy import run_in_pypy
 
 logging_setup()
 _LOG = logging.getLogger(__name__)
 
-_WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 2
-_WORKER_CHUNKSIZE = 100
+_WORKER_PROCESSES_AMNT = 3
+_WORKER_CHUNKSIZE = 10
 _RESULT_DIR = HERE / 'research' / 'results'
 
 def _research_candidates_include_real_worker(args) -> t.Tuple[
@@ -29,8 +32,12 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[
     before = time()
     candidates = get_path_candidates(
         path[0], path[-1],
-        abort_on=lambda: [{ 'func': lambda p: p == path, 'desc': 'path eq' }],
-        quiet=True,
+        abort_on=lambda: [
+            { 'func': lambda p: p == path, 'desc': 'path eq' },
+            { 'func': abort_on_timeout(20), 'desc': 'timeout 20s' },
+            { 'func': abort_on_amount(4000), 'desc': 'amount 4k' },
+        ],
+        # quiet=True,
     )['candidates']
     if path in candidates:
         return True, candidates.index(path), path, round(time() - before, 2)
@@ -39,16 +46,16 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[
         return False, None, path, 0.0
 
 
+@run_in_pypy()
 def _research_candidates_include_real():
     ris_paths = _load_ris_paths()
-    np.random.shuffle(ris_paths)
 
     # HACK: initialize cache before workers all start populating cache
     get_path_candidates(3320, 3320)
 
     worker_params = ( (path,) for path in ris_paths )
 
-    iter, included, included_pos, not_included_len, took = 0, 0, [], [], []
+    iter, included, included_pos, not_included_len, took = 0, 0, [3], [5.0], [2.0]
 
     prg = Progress(
         round(len(ris_paths) / _WORKER_CHUNKSIZE),
@@ -109,18 +116,22 @@ def _load_ris_paths() -> t.List[t.List[int]]:
     # NOTE: THESE HAVE TO BE THE SAME AS IN GET_CANDIDATES!
     # HACK: change get_candidates to be parameterizable?
 
-    return [
-        p['path'] for p in itertools.chain(
-            routeviews.iter_paths(
-                datetime.fromisoformat('2023-05-01T00:00'),
-                eliminate_path_prepending=True,
-            ),
-            ripe_ris.iter_paths(
-                datetime.fromisoformat('2023-05-01T00:00'),
-                eliminate_path_prepending=True,
-            ),
-        )
-    ]
+    dt = datetime.fromisoformat('2023-05-01T00:00')
+
+    def _load():
+        paths = [
+            p['path'] for p in itertools.chain(
+                routeviews.iter_paths(dt, eliminate_path_prepending=True),
+                ripe_ris.iter_paths(dt, eliminate_path_prepending=True),
+            )
+        ]
+        random.shuffle(paths)
+        return paths
+
+    cache = PickleFileCache('research_candidates_include_real_paths', _load)
+
+    return cache.get()
+
 
 
 if __name__ == '__main__': _research_candidates_include_real()

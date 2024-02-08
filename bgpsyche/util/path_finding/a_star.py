@@ -1,6 +1,7 @@
 import typing as t
 import logging
 
+import networkx as nx
 from bgpsyche.util.path_finding.breadth_first import Graph
 
 _LOG = logging.getLogger(__name__)
@@ -129,5 +130,15 @@ if __name__ == '__main__':
     print(flood_fill_distances({
         source: set(sink2count.keys()) for source, sink2count in g.items()
     }, 'a'))
+
+    g_nx: t.Any = nx.DiGraph()
+    for source, sink2cost in g.items():
+        g_nx.add_node(source)
+        for sink, cost in sink2cost.items():
+            g_nx.add_node(sink)
+            g_nx.add_edge(source, sink)
+            g_nx[source][sink]['cost'] = cost
+
+    print(nx.dijkstra_predecessor_and_distance(g_nx, 'a')[1])
 
     pass

@@ -4,6 +4,7 @@ requests===2.31.0
 requests-toolbelt===1.0.0
 networkx===3.2.1
 editdistance===0.6.1
+matplotlib==3.8.2
 numpy==1.22.0
 
 django-peeringdb==3.2.0
