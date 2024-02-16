@@ -1,14 +1,23 @@
+import bz2
+from datetime import date
 import logging
 import typing as t
 import functools
 import logging
 
-from bgpsyche.caching.json import JSONFileCache
 from gql import gql as _gql
 import gql
 import gql.transport.requests
+from bgpsyche.caching.json import JSONFileCache
+from bgpsyche.util.benchmark import bench_function
+from bgpsyche.util.const import DATA_DIR
+from bgpsyche.util.net.download import download_file_cached
 
 _LOG = logging.getLogger(__name__)
+
+# ranking
+# ----------------------------------------------------------------------
+
 gql.transport.requests.log.setLevel(logging.WARNING)
 
 def _req_asrank(query: str) -> t.Any:
@@ -68,3 +77,38 @@ def get_asrank_full() -> ASRank:
 def get_asrank(asn: int) -> int:
     asrank = get_asrank_full()
     return asrank['by_asn'][asn] if asn in asrank['by_asn'] else -1
+
+
+# customer cones
+# ----------------------------------------------------------------------
+
+_CUSTOMER_CONE_DOWNLOAD_DIR = DATA_DIR / 'asrank_customer_cones'
+_CUSTOMER_CONE_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@functools.lru_cache()
+@bench_function
+def get_asrank_customer_cones_full(
+        dt: date = date.fromisoformat('2023-05-01'),
+) -> t.Dict[int, t.Set[int]]:
+    ret: t.Dict[int, t.Set[int]] = {}
+    fname = f'{dt.strftime("%Y%m%d")}.ppdc-ases.txt.bz2'
+    file = download_file_cached(
+        f'http://data.caida.org/datasets/as-relationships/serial-1/{fname}',
+        _CUSTOMER_CONE_DOWNLOAD_DIR / fname
+    )
+
+    for line in bz2.open(file, 'rt', encoding='utf-8'):
+        if line.startswith('#'): continue
+        ases = [ int(asn) for asn in line.split(' ') ]
+        ret[ases[0]] = set(ases[1:]).difference({ases[0]})
+
+    return ret
+
+
+def get_asrank_customer_cones(
+        asn: int,
+        dt: date = date.fromisoformat('2023-05-01'),
+) -> t.Optional[t.Set[int]]:
+    cones = get_asrank_customer_cones_full(dt)
+    return cones[asn] if asn in cones else set()

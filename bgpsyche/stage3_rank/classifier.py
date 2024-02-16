@@ -4,20 +4,18 @@ from pprint import pformat
 import statistics
 import typing as t
 from functools import cmp_to_key
-import numpy as np
-from sklearn.base import BaseEstimator
-from sklearn.metrics import f1_score, precision_score
-from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.neural_network import MLPClassifier
-from matplotlib import pyplot as plt
 
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import GradientBoostingRegressor
+from matplotlib import pyplot as plt
 from bgpsyche.logging_config import logging_setup
-from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
+from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.stage2_enrich.enrich import enrich_path
-from bgpsyche.stage3_rank.make_dataset import make_path_level_dataset
-from bgpsyche.stage3_rank.vectorize_features import PATH_FEATURE_VECTOR_NAMES, vectorize_path_features
+from bgpsyche.stage3_rank.make_dataset import make_dataset
+from bgpsyche.stage3_rank.vectorize_features import (
+    PATH_FEATURE_VECTOR_NAMES, vectorize_path_features
+)
 from bgpsyche.caching.pickle import PickleFileCache
 
 logging_setup()
@@ -31,7 +29,7 @@ def _train() -> t.Callable[[t.List[int]], float]:
         # python3.9 though.
         classifier = GradientBoostingRegressor(random_state=rng)
 
-        dataset = make_path_level_dataset()
+        dataset = make_dataset()
         X = [ p['path_features'] for p in dataset ]
         y = [ int(p['real']) for p in dataset ]
         _LOG.info('Got training data set')
@@ -67,7 +65,7 @@ def _train() -> t.Callable[[t.List[int]], float]:
 
 
 def _correlations() -> t.Dict[str, float]:
-    dataset = make_path_level_dataset()
+    dataset = make_dataset()
     X = [ p['path_features'] for p in dataset ]
     y = [ int(p['real']) for p in dataset ]
 
@@ -89,7 +87,7 @@ def predict_candidates(source: int, sink: int) -> t.List[t.Tuple[float, t.List[i
     ret: t.List[t.Tuple[float, t.List[int]]] = []
     predict = _train()
 
-    for candidate in get_path_candidates(source, sink)['candidates']:
+    for candidate in get_path_candidates(source, sink):
         pred = predict(candidate)
         ret.append((pred, candidate))
 

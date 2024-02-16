@@ -7,14 +7,13 @@ import typing as t
 from datetime import datetime
 import logging
 import statistics
-from os import cpu_count
 
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.service.ext import ripe_ris, routeviews
 from bgpsyche.stage1_candidates.get_candidates import (
-    abort_on_amount, abort_on_timeout, weight_by_relationship
+    abort_on_amount, abort_on_timeout, get_path_candidates
 )
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import HERE
@@ -23,7 +22,7 @@ from bgpsyche.util.run_in_pypy import run_in_pypy
 logging_setup()
 _LOG = logging.getLogger(__name__)
 
-_WORKER_PROCESSES_AMNT = 3
+_WORKER_PROCESSES_AMNT = 4
 _WORKER_CHUNKSIZE = 10
 _RESULT_DIR = HERE / 'research' / 'results'
 
@@ -33,34 +32,23 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[
     path: t.List[int] = args[0]
     before = time()
 
-    candidates_base = get_path_candidates(
+    candidates = get_path_candidates(
         path[0], path[-1],
-        abort_on=lambda: [
-            { 'func': lambda p: p == path, 'desc': 'path eq [base]' },
-            { 'func': abort_on_timeout(5), 'desc': 'timeout 5s [base]' },
-            { 'func': abort_on_amount(4000), 'desc': 'amount 4k [base]' },
+        abort_customer_cone_search=lambda: [
+            { 'func': lambda p: p == path, 'desc': 'path eq [cone]' },
+            { 'func': abort_on_timeout(1), 'desc': 'timeout 1s [cone]' },
+            { 'func': abort_on_amount(4000), 'desc': 'amount 4k [cone]' },
         ],
-        # quiet=True,
-    )['candidates']
+        abort_full_search=lambda: [
+            { 'func': lambda p: p == path, 'desc': 'path eq [full]' },
+            { 'func': abort_on_timeout(3), 'desc': 'timeout 3s [full]' },
+            { 'func': abort_on_amount(4000), 'desc': 'amount 4k [full]' },
+        ],
+        quiet=True,
+    )
 
-    # candidates_add = get_path_candidates(
-    #     path[0], path[-1],
-    #     abort_on=lambda: [
-    #         { 'func': lambda p: p == path, 'desc': 'path eq [weight]' },
-    #         { 'func': abort_on_timeout(5), 'desc': 'timeout 5s [weight]' },
-    #         { 'func': abort_on_amount(4000), 'desc': 'amount 4k [weight]' },
-    #     ],
-    #     weight=weight_by_relationship(path[-1]),
-    # )['candidates']
-
-    candidates_add = []
-
-    for candidate in candidates_add:
-        if candidate not in candidates_base:
-            candidates_base.append(candidate)
-
-    if path in candidates_base:
-        return True, candidates_base.index(path), path, round(time() - before, 2)
+    if path in candidates:
+        return True, candidates.index(path), path, round(time() - before, 2)
     else:
         # _LOG.info(f'Path not found: {path}')
         return False, None, path, 0.0

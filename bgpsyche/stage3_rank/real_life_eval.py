@@ -4,12 +4,13 @@ import random
 from os import cpu_count
 import typing as t
 import logging
-
 import multiprocessing
 
+from bgpsyche.caching.pickle import PickleFileCache
+from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
 from bgpsyche.stage3_rank import classifier_rnn
-from bgpsyche.service.ext import routeviews, mrt_custom
+from bgpsyche.service.ext import routeviews
 
 _LOG = logging.getLogger(__name__)
 
@@ -29,9 +30,7 @@ class _RealLifeEvalModelWorkerResp(t.TypedDict):
 
 def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
 
-    candidates = list(get_path_candidates(
-        path[0], path[-1], quiet=True
-    )['candidates'])
+    candidates = list(get_path_candidates(path[0], path[-1], quiet=True))
     if path not in candidates:
         _LOG.info('skipping bc not in candidates')
         return {
@@ -53,10 +52,29 @@ def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerR
     }
 
 
-def real_life_eval_model(
-        real_paths: t.List[t.List[int]],
-):
-    random.shuffle(real_paths)
+def _load_test_paths() -> t.List[t.List[int]]:
+    dt = datetime.fromisoformat('2023-05-01T00:00')
+
+    def _load():
+        paths = [
+            meta['path'] for meta in
+            # mrt_custom.iter_paths('mrt_dtag', eliminate_path_prepending=True,)
+            routeviews.iter_paths(
+                datetime.fromisoformat('2023-05-02T00:00'),
+                eliminate_path_prepending=True,
+                # collectors=['decix.jhb'],
+            )
+        ]
+        random.shuffle(paths)
+        return paths
+
+    cache = PickleFileCache('research_real_life_eval_paths', _load)
+
+    return cache.get()
+
+
+def real_life_eval_model():
+    real_paths = _load_test_paths()
     found_positions: t.List[float] = []
     candidate_lengths: t.List[int] = []
     iter = 0
@@ -109,16 +127,6 @@ def real_life_eval_model(
 def _main():
     _PREDICT_FUN([[3320, 3320]])
 
-    real_paths = list(
-        meta['path'] for meta in
-        # mrt_custom.iter_paths('mrt_dtag', eliminate_path_prepending=True,)
-        routeviews.iter_paths(
-            datetime.fromisoformat('2023-05-02T00:00'),
-            eliminate_path_prepending=True,
-            # collectors=['decix.jhb'],
-        )
-    )
-
-    real_life_eval_model(real_paths)
+    real_life_eval_model()
 
 if __name__ == '__main__': _main()

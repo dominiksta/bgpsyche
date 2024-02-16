@@ -2,6 +2,7 @@ from collections import defaultdict
 import typing as t
 
 RelationshipKind = t.Literal['c2p', 'p2p', 'p2c']
+RELATIONSHIP_KIND: t.Set[RelationshipKind] = set(t.get_args(RelationshipKind))
 RelationshipKindOpt = t.Literal[RelationshipKind, '???']
 Relationship = t.Tuple[int, int, RelationshipKind]
 Source2Sink2Rel = t.Dict[int, t.Dict[int, RelationshipKind]]

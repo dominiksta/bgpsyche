@@ -213,7 +213,8 @@ class SerializableFileCache(Cache[_T]):
                     cache.invalidate()
                     _LOG.info(f'Cache invalidated, {pformat((args, params["args"]))}')
 
-            cache._set_meta(custom={ 'args': args, 'kwargs': kwargs })
+            if not cache._get_meta()['valid']:
+                cache._set_meta(custom={ 'args': args, 'kwargs': kwargs })
 
             return cache.get()
 

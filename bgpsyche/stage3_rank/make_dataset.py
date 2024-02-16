@@ -29,12 +29,15 @@ _WORKER_CHUNKSIZE = 10
 def _get_path_candidates_worker(path: t.List[int]):
     return get_path_candidates(
         source=path[0], sink=path[-1],
-        abort_on=lambda: [
-            # since we really only want to find a handful of wrong paths, it
-            # does not matter if we find the correct path before the timeout.
+        # since we really only want to find a handful of wrong paths, it does
+        # not matter if we find the correct path before the timeout.
+        abort_customer_cone_search=lambda: [
             { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
-            # TODO: set to 200 ^^20231221-133927 Research Log_ BGPsyche Candidate Search^^
-            { 'func': abort_on_amount(200), 'desc': 'found 50' },
+            { 'func': abort_on_amount(200), 'desc': 'found 200' },
+        ],
+        abort_full_search=lambda: [
+            { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
+            { 'func': abort_on_amount(200), 'desc': 'found 200' },
         ],
         # quiet=True,
     ), path
@@ -88,9 +91,9 @@ def _iter_path_with_alternatives(
             ):
                 iter += 1
                 resp, path = w_resp
-                np.random.shuffle(resp['candidates'])
+                np.random.shuffle(resp)
                 out_candidates = []
-                for candidate in resp['candidates']:
+                for candidate in resp:
                     if candidate == path: continue
                     if len(out_candidates) >= candidates_per_real_path: break
                     out_candidates.append(candidate)

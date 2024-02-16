@@ -29,19 +29,16 @@ if _args.sync_peeringdb: peeringdb.Client.sync()
 if _args.stage == '01_get_path_candidates':
     # 23673 23764 4134 4538 23910 24371
     candidates = get_path_candidates(23673, 24371)
-    print([23673, 23764, 4134, 4538, 23910, 24371] in candidates['by_length'][6])
-    print(len(candidates['candidates']))
+    print(len(candidates))
 
 
     # 14840 →  32098 ↘  13999 ↘ 265620
     candidates = get_path_candidates(14840, 265620)
-    pprint(candidates['candidates'][:10])
+    pprint(candidates[:10])
 
-    print([14840, 32098, 13999, 265620] in candidates['by_length'][4])
-    print(candidates['by_length'].keys())
 
 elif _args.stage == '02_enrich_path_candidates':
-    candidates = get_path_candidates(14840, 265620)['candidates']
+    candidates = get_path_candidates(14840, 265620)
     print(len(candidates))
 
     for path in candidates[:50]:
