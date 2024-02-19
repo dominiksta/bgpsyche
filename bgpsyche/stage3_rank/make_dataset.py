@@ -39,7 +39,7 @@ def _get_path_candidates_worker(path: t.List[int]):
             { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
             { 'func': abort_on_amount(200), 'desc': 'found 200' },
         ],
-        # quiet=True,
+        quiet=True,
     ), path
 
 
@@ -73,7 +73,7 @@ def _iter_path_with_alternatives(
     np.random.shuffle(real_paths)
     real_paths = real_paths[:real_paths_n]
 
-    prg_len = 5
+    prg_len = 20
     prg = Progress(int(len(real_paths) / prg_len), progress_msg)
 
     # HACK: initialize cache in main process
@@ -109,10 +109,7 @@ def _iter_path_with_alternatives(
         prg.complete()
 
 
-# path level
-# ----------------------------------------------------------------------
-
-class DatasetPathLevelEl(t.TypedDict):
+class DatasetEl(t.TypedDict):
     real: bool
     path: t.List[int]
     path_features: t.List[t.Union[int, float]]
@@ -121,15 +118,15 @@ class DatasetPathLevelEl(t.TypedDict):
 @run_in_pypy(cache=JSONFileCache)
 def make_dataset(
         candidates_per_real_path = 1,
-        real_paths_n = 1_000,
+        real_paths_n = 10_000,
         routeviews_dts: t.List[str] = [
             '2023-05-01T00:00',
         ],
         ripe_ris_dts: t.List[str] = [
             '2023-05-01T00:00',
         ],
-) -> t.List[DatasetPathLevelEl]:
-    out: t.List[DatasetPathLevelEl] = []
+) -> t.List[DatasetEl]:
+    out: t.List[DatasetEl] = []
     for real, alternatives in _iter_path_with_alternatives(
             candidates_per_real_path=candidates_per_real_path,
             real_paths_n=real_paths_n,

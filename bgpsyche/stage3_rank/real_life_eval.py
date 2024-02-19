@@ -11,12 +11,13 @@ from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
 from bgpsyche.stage3_rank import classifier_rnn
 from bgpsyche.service.ext import routeviews
+from bgpsyche.util.multiprocessing import worker_amount
 
 _LOG = logging.getLogger(__name__)
 
 _PREDICT_FUN = classifier_rnn.predict_probs
 
-_WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 3
+_WORKER_PROCESSES_AMNT = worker_amount(ram_per_worker_mb=500)
 _WORKER_CHUNKSIZE = 1
 
 class _PathWithProb(t.TypedDict):

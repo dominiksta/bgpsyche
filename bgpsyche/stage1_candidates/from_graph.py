@@ -64,7 +64,7 @@ def get_path_candidates_from_graph(
                     )
                     abort = True
     except nx.NetworkXNoPath:
-        _LOG.info(f'No path in graph between {source} and {sink}')
+        _LOG.debug(f'No path in graph between {source} and {sink}')
 
 
     return {
