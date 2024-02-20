@@ -2,6 +2,14 @@ from datetime import date
 import typing as t
 
 from bgpsyche.service.ext.ripe_as_names_countries import AsnTxtCountryCode
+from bgpsyche.util.bgp.relationship import RelationshipKind
+
+
+class LinkFeatures(t.TypedDict):
+    rel: t.Optional[RelationshipKind]
+    distance_km: int
+    trade_service_volume_million_usd: float
+
 
 class ASFeaturesRaw(t.TypedDict):
     # - using this country code is probably fine, but
@@ -9,7 +17,14 @@ class ASFeaturesRaw(t.TypedDict):
     #   because then the model can more likely reflect political/administrative
     #   concerns such as a path being less likely to go through both north &
     #   south korea -> TODO: encode as category
-    ripe_country: AsnTxtCountryCode
+
+    # - democracy index
+    #   - https://ourworldindata.org/grapher/democracy-index-eiu
+    # - lat/long coords
+    # - censorship index
+    # - https://en.wikipedia.org/wiki/List_of_countries_by_number_of_Internet_users
+    country_democracy_index: t.Optional[float]
+
     # TODO: try replacing with our own customer cone computation from t1 mrt data
     as_rank: int
     rirstat_born: t.Optional[date]

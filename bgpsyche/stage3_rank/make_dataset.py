@@ -1,8 +1,8 @@
 from datetime import datetime
+from itertools import pairwise
 import logging
 import multiprocessing
 from os import cpu_count
-from types import FrameType
 import typing as t
 import signal
 
@@ -12,12 +12,12 @@ from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates.get_candidates import (
     abort_on_amount, abort_on_timeout, get_path_candidates
 )
-from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_path
+from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.vectorize_features import (
-    vectorize_as_features, vectorize_path_features
+    vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
-from bgpsyche.util.benchmark import Progress
 from bgpsyche.service.ext import routeviews, ripe_ris
+from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.run_in_pypy import run_in_pypy
 
 logging_setup()
@@ -112,8 +112,9 @@ def _iter_path_with_alternatives(
 class DatasetEl(t.TypedDict):
     real: bool
     path: t.List[int]
-    path_features: t.List[t.Union[int, float]]
-    as_features: t.List[t.List[t.Union[int, float]]]
+    path_features : t.List[t.Union[int, float]]
+    link_features : t.List[t.List[t.Union[int, float]]]
+    as_features   : t.List[t.List[t.Union[int, float]]]
 
 @run_in_pypy(cache=JSONFileCache)
 def make_dataset(
@@ -127,6 +128,21 @@ def make_dataset(
         ],
 ) -> t.List[DatasetEl]:
     out: t.List[DatasetEl] = []
+
+    def make_single_element(real: bool, path: t.List[int]) -> DatasetEl:
+        return {
+            'path_features': vectorize_path_features(enrich_path(path)),
+            'as_features': [
+                vectorize_as_features(enrich_asn(asn)) for asn in path
+            ],
+            'link_features': [
+                vectorize_link_features(enrich_link(source, sink))
+                    for source, sink in pairwise(path)
+            ],
+            'path': path,
+            'real': real,
+        }
+
     for real, alternatives in _iter_path_with_alternatives(
             candidates_per_real_path=candidates_per_real_path,
             real_paths_n=real_paths_n,
@@ -134,20 +150,8 @@ def make_dataset(
             ripe_ris_dts=ripe_ris_dts,
     ):
         for alternative in alternatives:
-            out.append({
-                'path_features': vectorize_path_features(enrich_path(alternative)),
-                'as_features': [
-                    vectorize_as_features(enrich_asn(asn)) for asn in alternative
-                ],
-                'path': alternative, 'real': False,
-            })
+            out.append(make_single_element(real=False, path=alternative))
 
-        out.append({
-            'path_features': vectorize_path_features(enrich_path(real)),
-            'as_features': [
-                vectorize_as_features(enrich_asn(asn)) for asn in real
-            ],
-            'path': real, 'real': True,
-        })
+        out.append(make_single_element(real=True, path=real))
 
     return out

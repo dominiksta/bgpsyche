@@ -1,4 +1,5 @@
 import logging
+from itertools import pairwise
 from statistics import mean
 from types import FrameType
 import typing as t
@@ -8,11 +9,11 @@ import random
 import torch
 from torch import nn
 from torcheval.metrics.functional import binary_accuracy, binary_f1_score
-from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_path
+from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import make_dataset
 from bgpsyche.stage3_rank.vectorize_features import (
-    AS_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES, vectorize_as_features,
-    vectorize_path_features
+    AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES,
+    vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import DATA_DIR
@@ -27,11 +28,15 @@ _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # model definition
 # ----------------------------------------------------------------------
 
+_INPUT_SIZE_LINK = len(LINK_FEATURE_VECTOR_NAMES)
 _INPUT_SIZE_ASN = len(AS_FEATURE_VECTOR_NAMES)
 _INPUT_SIZE_PATH = len(PATH_FEATURE_VECTOR_NAMES)
 
-_RNN_NUM_LAYERS = 2
-_RNN_HIDDEN_SIZE = 64
+_RNN_AS_LEVEL_NUM_LAYERS = 2
+_RNN_AS_LEVEL_HIDDEN_SIZE = 64
+
+_RNN_LINK_LEVEL_NUM_LAYERS = 2
+_RNN_LINK_LEVEL_HIDDEN_SIZE = 64
 
 _PATH_MLP_OUT_SIZE = 64
 
@@ -41,34 +46,56 @@ class _RNN(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.rnn = nn.RNN(
-            _INPUT_SIZE_ASN, _RNN_HIDDEN_SIZE,
-            num_layers=_RNN_NUM_LAYERS, batch_first=True
+        self.rnn_as_level = nn.RNN(
+            _INPUT_SIZE_ASN, _RNN_AS_LEVEL_HIDDEN_SIZE,
+            num_layers=_RNN_AS_LEVEL_NUM_LAYERS, batch_first=True
+        )
+        self.rnn_link_level = nn.RNN(
+            _INPUT_SIZE_LINK, _RNN_LINK_LEVEL_HIDDEN_SIZE,
+            num_layers=_RNN_LINK_LEVEL_NUM_LAYERS, batch_first=True
         )
 
         self.l1 = nn.Linear(_INPUT_SIZE_PATH, 16)
         self.l2 = nn.Linear(16, _PATH_MLP_OUT_SIZE)
 
-        self.l_out1 = nn.Linear(_RNN_HIDDEN_SIZE + _PATH_MLP_OUT_SIZE, 16)
-        self.l_out2 = nn.Linear(16, 1)
+        self.l_out1 = nn.Linear(
+            _RNN_AS_LEVEL_HIDDEN_SIZE
+            + _RNN_LINK_LEVEL_HIDDEN_SIZE
+            + _PATH_MLP_OUT_SIZE,
+            64
+        )
+        self.l_out2 = nn.Linear(64, 16)
+        self.l_out3 = nn.Linear(16, 1)
 
     def forward(
             self,
             x_as_level: torch.Tensor, # shape (len_path, amnt_of_as_features)
+            x_link_level: torch.Tensor, # shape (len_path-1, amnt_of_link_features)
             x_path_level: torch.Tensor, # shape (amnt_of_path_features)
     ) -> torch.Tensor:
-        hidden_0 = torch.zeros(_RNN_NUM_LAYERS, _RNN_HIDDEN_SIZE).to(_device)
+        hidden_0_as_level = torch.zeros(
+            _RNN_AS_LEVEL_NUM_LAYERS, _RNN_AS_LEVEL_HIDDEN_SIZE
+        ).to(_device)
+        hidden_0_link_level = torch.zeros(
+            _RNN_LINK_LEVEL_NUM_LAYERS, _RNN_LINK_LEVEL_HIDDEN_SIZE
+        ).to(_device)
 
-        out_rnn, _ = self.rnn(x_as_level, hidden_0)
+        out_rnn_as_level, _ = self.rnn_as_level(x_as_level, hidden_0_as_level)
         # out shape: (seq_length, hidden_size)
         # - we want just the last hidden state -> we want shape (hidden_size)
-        out_rnn = out_rnn[-1, :]
+        out_rnn_as_level = out_rnn_as_level[-1, :]
+
+        out_rnn_link_level, _ = self.rnn_link_level(x_link_level, hidden_0_link_level)
+        out_rnn_link_level = out_rnn_link_level[-1, :]
 
         out_mlp = self.l1(x_path_level)
         out_mlp = self.l2(out_mlp)
 
-        out = self.l_out1(torch.concat((out_rnn, out_mlp)))
+        out = self.l_out1(torch.concat((
+            out_rnn_as_level, out_rnn_link_level, out_mlp
+        )))
         out = self.l_out2(out)
+        out = self.l_out3(out)
 
         return out
 
@@ -85,8 +112,9 @@ _epochs = 10
 # ======================================================================
 
 def _train(
-        X_path_level: t.List[t.List[t.Union[float, int]]],
-        X_as_level: t.List[t.List[t.List[t.Union[float, int]]]],
+        X_path_level : t.List[t.List[t.Union[float, int]]],
+        X_as_level   : t.List[t.List[t.List[t.Union[float, int]]]],
+        X_link_level : t.List[t.List[t.List[t.Union[float, int]]]],
         y: t.List,
         eval_fn: t.Callable[[], t.Any],
 ):
@@ -136,9 +164,11 @@ def _train(
             X_path_level_el \
                           = torch.tensor(X_path_level[i], dtype=torch.float32, device=_device)
             X_as_level_el = torch.tensor(X_as_level[i], dtype=torch.float32, device=_device)
+            X_link_level_el \
+                          = torch.tensor(X_link_level[i], dtype=torch.float32, device=_device)
             y_el          = torch.tensor(y[i], dtype=torch.float32, device=_device)
 
-            y_logits = _model(X_as_level_el, X_path_level_el).squeeze()
+            y_logits = _model(X_as_level_el, X_link_level_el, X_path_level_el).squeeze()
             loss = _loss_fn(y_logits, y_el)
             losses.append(loss.item())
 
@@ -162,8 +192,9 @@ def _train(
 
 
 def _evaluate(
-        X_path_level: t.List[t.List[t.Union[float, int]]],
-        X_as_level: t.List[t.List[t.List[t.Union[float, int]]]],
+        X_path_level : t.List[t.List[t.Union[float, int]]],
+        X_as_level   : t.List[t.List[t.List[t.Union[float, int]]]],
+        X_link_level : t.List[t.List[t.List[t.Union[float, int]]]],
         y: t.List,
 ) -> t.List[float]:
     _LOG.info('Evaluating model...')
@@ -173,8 +204,10 @@ def _evaluate(
             X_path_level_el \
                           = torch.tensor(X_path_level[i], dtype=torch.float32, device=_device)
             X_as_level_el = torch.tensor(X_as_level[i], dtype=torch.float32, device=_device)
+            X_link_level_el \
+                          = torch.tensor(X_link_level[i], dtype=torch.float32, device=_device)
 
-            y_logits = _model(X_as_level_el, X_path_level_el).squeeze()
+            y_logits = _model(X_as_level_el, X_link_level_el, X_path_level_el).squeeze()
             prob_test.append(float(torch.sigmoid(y_logits)))
 
         f1 = binary_f1_score(torch.tensor(prob_test), torch.tensor(y))
@@ -198,8 +231,13 @@ def predict_probs(paths: t.List[t.List[int]]) -> t.List[float]:
     for path in paths:
         as_features = [ vectorize_as_features(enrich_asn(asn)) for asn in path ]
         path_features = vectorize_path_features(enrich_path(path))
+        link_features = [
+            vectorize_link_features(enrich_link(source, sink))
+            for source, sink in pairwise(path)
+        ]
         y_logits = _cpu_model(
             torch.tensor(as_features, dtype=torch.float32),
+            torch.tensor(link_features, dtype=torch.float32),
             torch.tensor(path_features, dtype=torch.float32),
         ).squeeze()
         ret.append(float(torch.sigmoid(y_logits)))
@@ -221,19 +259,33 @@ def ready_model():
 
     X_path_level = [ el['path_features'] for el in dataset ]
     X_as_level   = [ el['as_features'] for el in dataset ]
+    X_link_level = [ el['link_features'] for el in dataset ]
     y            = [ int(el['real']) for el in dataset ]
 
     X_path_level_train = X_path_level[:train_size]
     X_path_level_test  = X_path_level[train_size:]
     X_as_level_train   = X_as_level[:train_size]
     X_as_level_test    = X_as_level[train_size:]
+    X_link_level_train = X_link_level[:train_size]
+    X_link_level_test  = X_link_level[train_size:]
     y_train            = y[:train_size]
     y_test             = y[train_size:]
 
     _LOG.info('Dataset prepared')
 
     def _evaluate_on_test():
-        return _evaluate(X_path_level_test, X_as_level_test, y_test)
+        return _evaluate(
+            X_path_level_test,
+            X_as_level_test,
+            X_link_level_test,
+            y_test
+        )
 
-    _train(X_path_level_train, X_as_level_train, y_train, _evaluate_on_test)
+    _train(
+        X_path_level_train,
+        X_as_level_train,
+        X_link_level_train,
+        y_train,
+        _evaluate_on_test
+    )
     _evaluate_on_test()
