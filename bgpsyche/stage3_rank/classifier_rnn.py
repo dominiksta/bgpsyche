@@ -8,9 +8,11 @@ import random
 
 import torch
 from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 from torcheval.metrics.functional import binary_accuracy, binary_f1_score
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import make_dataset
+from bgpsyche.stage3_rank.nn_util import iter_batched
 from bgpsyche.stage3_rank.vectorize_features import (
     AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES,
     vectorize_as_features, vectorize_link_features, vectorize_path_features
@@ -69,31 +71,36 @@ class _RNN(nn.Module):
 
     def forward(
             self,
-            x_as_level: torch.Tensor, # shape (len_path, amnt_of_as_features)
-            x_link_level: torch.Tensor, # shape (len_path-1, amnt_of_link_features)
-            x_path_level: torch.Tensor, # shape (amnt_of_path_features)
+            # shape [packed] (batch_size, len_path, amnt_of_as_features)
+            x_as_level: torch.Tensor,
+            # shape [packed] (batch_size, len_path-1, amnt_of_link_features)
+            x_link_level: torch.Tensor,
+            # shape [packed] (batch_size, amnt_of_path_features)
+            x_path_level: torch.Tensor,
     ) -> torch.Tensor:
         hidden_0_as_level = torch.zeros(
-            _RNN_AS_LEVEL_NUM_LAYERS, _RNN_AS_LEVEL_HIDDEN_SIZE
+            _RNN_AS_LEVEL_NUM_LAYERS, x_as_level.size(0),
+            _RNN_AS_LEVEL_HIDDEN_SIZE
         ).to(_device)
         hidden_0_link_level = torch.zeros(
-            _RNN_LINK_LEVEL_NUM_LAYERS, _RNN_LINK_LEVEL_HIDDEN_SIZE
+            _RNN_LINK_LEVEL_NUM_LAYERS, x_link_level.size(0),
+            _RNN_LINK_LEVEL_HIDDEN_SIZE
         ).to(_device)
 
         out_rnn_as_level, _ = self.rnn_as_level(x_as_level, hidden_0_as_level)
-        # out shape: (seq_length, hidden_size)
-        # - we want just the last hidden state -> we want shape (hidden_size)
-        out_rnn_as_level = out_rnn_as_level[-1, :]
+        # out shape: (batch_size, seq_length, hidden_size)
+        # - we want just the last hidden state -> we want shape (batch_size, hidden_size)
+        out_rnn_as_level = out_rnn_as_level[:, -1, :]
 
         out_rnn_link_level, _ = self.rnn_link_level(x_link_level, hidden_0_link_level)
-        out_rnn_link_level = out_rnn_link_level[-1, :]
+        out_rnn_link_level = out_rnn_link_level[:, -1, :]
 
         out_mlp = self.l1(x_path_level)
         out_mlp = self.l2(out_mlp)
 
         out = self.l_out1(torch.concat((
             out_rnn_as_level, out_rnn_link_level, out_mlp
-        )))
+        ), dim=1))
         out = self.l_out2(out)
         out = self.l_out3(out)
 
@@ -111,6 +118,8 @@ _epochs = 10
 # Training & Evaluation
 # ======================================================================
 
+_BATCH_SIZE = 10
+
 def _train(
         X_path_level : t.List[t.List[t.Union[float, int]]],
         X_as_level   : t.List[t.List[t.List[t.Union[float, int]]]],
@@ -118,7 +127,11 @@ def _train(
         y: t.List,
         eval_fn: t.Callable[[], t.Any],
 ):
-    assert len(y) == len(X_path_level) and len(y) == len(X_as_level)
+    assert (
+        len(y) == len(X_path_level) and
+        len(y) == len(X_as_level) and
+        len(y) == len(X_link_level)
+    )
 
     _model_file_path.parent.mkdir(exist_ok=True, parents=True)
     if _model_file_path.exists():
@@ -131,9 +144,9 @@ def _train(
     _LOG.info('Model not found on disk, initializing training')
 
     prg_i = 0
-    prg_steps = 1000
-    eval_steps = 10_000
-    prg = Progress(int(len(y) * _epochs / prg_steps), 'train')
+    prg_steps = int(1000 / _BATCH_SIZE)
+    eval_steps = int(10_000 / _BATCH_SIZE)
+    prg = Progress(int(len(y) * _epochs / prg_steps / _BATCH_SIZE), 'train')
     losses: t.List[float] = []
 
     cancel = False
@@ -151,25 +164,30 @@ def _train(
 
     _model.train()
     for epoch in range(_epochs):
-        for i in range(len(y)):
-            # NOTE: This is *really* slow and cpu bound for now. The tutorial
-            # that I used was assuming fixed length sequences, but we have
-            # variable length sequences (AS paths). This complicates batching
-            # because a tensor has to have fixed size dimensions.
-            # Future potential optimization:
-            # - torch.nn.utils.rnn.pack_sequence
-            # - torch.nn.utils.rnn.unpack_sequence
-            # - https://datascience.stackexchange.com/questions/120781
+        iter_X_path_level = iter_batched(X_path_level, _BATCH_SIZE)
+        iter_X_as_level   = iter_batched(X_as_level, _BATCH_SIZE)
+        iter_X_link_level = iter_batched(X_link_level, _BATCH_SIZE)
+        iter_y            = iter_batched(y, _BATCH_SIZE)
 
-            X_path_level_el \
-                          = torch.tensor(X_path_level[i], dtype=torch.float32, device=_device)
-            X_as_level_el = torch.tensor(X_as_level[i], dtype=torch.float32, device=_device)
-            X_link_level_el \
-                          = torch.tensor(X_link_level[i], dtype=torch.float32, device=_device)
-            y_el          = torch.tensor(y[i], dtype=torch.float32, device=_device)
+        for X_path_level_batch, X_as_level_batch, X_link_level_batch, y_batch \
+                in zip(
+                    iter_X_path_level, iter_X_as_level, iter_X_link_level, iter_y
+                ):
+            X_path_level_batch = pad_sequence([
+                torch.tensor(el, dtype=torch.float32) for el in X_path_level_batch
+            ], batch_first=True).to(_device)
+            X_as_level_batch = pad_sequence([
+                torch.tensor(el, dtype=torch.float32) for el in X_as_level_batch
+            ], batch_first=True).to(_device)
+            X_link_level_batch = pad_sequence([
+                torch.tensor(el, dtype=torch.float32) for el in X_link_level_batch
+            ], batch_first=True).to(_device)
+            y_batch = torch.tensor(y_batch, dtype=torch.float32, device=_device)
 
-            y_logits = _model(X_as_level_el, X_link_level_el, X_path_level_el).squeeze()
-            loss = _loss_fn(y_logits, y_el)
+            y_logits = _model(
+                X_as_level_batch, X_link_level_batch, X_path_level_batch
+            ).squeeze()
+            loss = _loss_fn(y_logits, y_batch)
             losses.append(loss.item())
 
             _optimizer.zero_grad()
@@ -200,15 +218,29 @@ def _evaluate(
     _LOG.info('Evaluating model...')
     with torch.inference_mode():
         prob_test: t.List[float] = []
-        for i in range(len(y)):
-            X_path_level_el \
-                          = torch.tensor(X_path_level[i], dtype=torch.float32, device=_device)
-            X_as_level_el = torch.tensor(X_as_level[i], dtype=torch.float32, device=_device)
-            X_link_level_el \
-                          = torch.tensor(X_link_level[i], dtype=torch.float32, device=_device)
+        iter_X_path_level = iter_batched(X_path_level, _BATCH_SIZE)
+        iter_X_as_level   = iter_batched(X_as_level, _BATCH_SIZE)
+        iter_X_link_level = iter_batched(X_link_level, _BATCH_SIZE)
+        iter_y            = iter_batched(y, _BATCH_SIZE)
 
-            y_logits = _model(X_as_level_el, X_link_level_el, X_path_level_el).squeeze()
-            prob_test.append(float(torch.sigmoid(y_logits)))
+        for X_path_level_batch, X_as_level_batch, X_link_level_batch, y_batch \
+                in zip(
+                    iter_X_path_level, iter_X_as_level, iter_X_link_level, iter_y
+                ):
+            X_path_level_batch = pad_sequence([
+                torch.tensor(el, dtype=torch.float32) for el in X_path_level_batch
+            ], batch_first=True).to(_device)
+            X_as_level_batch = pad_sequence([
+                torch.tensor(el, dtype=torch.float32) for el in X_as_level_batch
+            ], batch_first=True).to(_device)
+            X_link_level_batch = pad_sequence([
+                torch.tensor(el, dtype=torch.float32) for el in X_link_level_batch
+            ], batch_first=True).to(_device)
+
+            y_logits = _model(
+                X_as_level_batch, X_link_level_batch, X_path_level_batch
+            ).squeeze()
+            prob_test += [ float(n) for n in torch.sigmoid(y_logits) ]
 
         f1 = binary_f1_score(torch.tensor(prob_test), torch.tensor(y))
         acc = binary_accuracy(torch.tensor(prob_test), torch.tensor(y))
@@ -229,12 +261,12 @@ def predict_probs(paths: t.List[t.List[int]]) -> t.List[float]:
     ret: t.List[float] = []
 
     for path in paths:
-        as_features = [ vectorize_as_features(enrich_asn(asn)) for asn in path ]
-        path_features = vectorize_path_features(enrich_path(path))
-        link_features = [
+        as_features = [[ vectorize_as_features(enrich_asn(asn)) for asn in path ]]
+        path_features = [ vectorize_path_features(enrich_path(path)) ]
+        link_features = [[
             vectorize_link_features(enrich_link(source, sink))
             for source, sink in pairwise(path)
-        ]
+        ]]
         y_logits = _cpu_model(
             torch.tensor(as_features, dtype=torch.float32),
             torch.tensor(link_features, dtype=torch.float32),
