@@ -25,8 +25,8 @@ def _train() -> t.Callable[[t.List[int]], float]:
     def _train():
         rng = np.random.RandomState(42)
 
-        # TODO: try other classifiers and *auto-sklearn*. auto-sklearn only works in
-        # python3.9 though.
+        # we could try other classifiers and *auto-sklearn*. auto-sklearn only
+        # works in python3.9 though.
         classifier = GradientBoostingRegressor(random_state=rng)
 
         dataset = make_dataset()

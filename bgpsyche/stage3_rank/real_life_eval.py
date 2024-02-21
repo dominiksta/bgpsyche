@@ -7,10 +7,9 @@ import logging
 import multiprocessing
 
 from bgpsyche.caching.pickle import PickleFileCache
-from bgpsyche.stage1_candidates import get_path_candidates
-from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
 from bgpsyche.stage3_rank import classifier_rnn
 from bgpsyche.service.ext import routeviews
+from bgpsyche.stage3_rank.path_candidate_cache import PathCandidateCache
 from bgpsyche.util.multiprocessing import worker_amount
 
 _LOG = logging.getLogger(__name__)
@@ -18,7 +17,9 @@ _LOG = logging.getLogger(__name__)
 _PREDICT_FUN = classifier_rnn.predict_probs
 
 _WORKER_PROCESSES_AMNT = worker_amount(ram_per_worker_mb=500)
-_WORKER_CHUNKSIZE = 1
+_WORKER_CHUNKSIZE = 10
+
+_CANDIDATE_CACHE = PathCandidateCache('real')
 
 class _PathWithProb(t.TypedDict):
     path: t.List[int]
@@ -31,7 +32,7 @@ class _RealLifeEvalModelWorkerResp(t.TypedDict):
 
 def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
 
-    candidates = list(get_path_candidates(path[0], path[-1], quiet=True))
+    candidates = _CANDIDATE_CACHE.get(path[0], path[-1])
     if path not in candidates:
         _LOG.info('skipping bc not in candidates')
         return {
@@ -80,8 +81,7 @@ def real_life_eval_model():
     candidate_lengths: t.List[int] = []
     iter = 0
 
-    # HACK: initialize cache in main process
-    get_path_candidates(3320, 3320)
+    _CANDIDATE_CACHE.init_caches()
 
     with multiprocessing.Pool(_WORKER_PROCESSES_AMNT) as p:
 

@@ -1,7 +1,6 @@
 from datetime import date
 import typing as t
 
-from bgpsyche.service.ext.ripe_as_names_countries import AsnTxtCountryCode
 from bgpsyche.util.bgp.relationship import RelationshipKind
 
 
@@ -12,15 +11,6 @@ class LinkFeatures(t.TypedDict):
 
 
 class ASFeaturesRaw(t.TypedDict):
-    # - using this country code is probably fine, but
-    # - we should somehow encode it as a category instead of coordinates,
-    #   because then the model can more likely reflect political/administrative
-    #   concerns such as a path being less likely to go through both north &
-    #   south korea -> TODO: encode as category
-
-    # - democracy index
-    #   - https://ourworldindata.org/grapher/democracy-index-eiu
-    # - lat/long coords
     # - censorship index
     # - https://en.wikipedia.org/wiki/List_of_countries_by_number_of_Internet_users
     country_democracy_index: t.Optional[float]
@@ -37,7 +27,6 @@ class ASFeaturesRaw(t.TypedDict):
     #   -> TODO: try replacing with how many & how large prefixes from bgp
     rirstat_addr_count_v4: t.Optional[float]
     rirstat_addr_count_v6: t.Optional[float]
-
 
 
 class PathFeatures(t.TypedDict):

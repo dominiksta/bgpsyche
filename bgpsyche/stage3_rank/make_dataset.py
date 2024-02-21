@@ -8,11 +8,13 @@ import signal
 
 import numpy as np
 from bgpsyche.caching.json import JSONFileCache
+from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.stage1_candidates.get_candidates import (
-    abort_on_amount, abort_on_timeout, get_path_candidates
+    abort_on_amount, abort_on_timeout
 )
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
+from bgpsyche.stage3_rank.path_candidate_cache import PathCandidateCache
 from bgpsyche.stage3_rank.vectorize_features import (
     vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
@@ -26,21 +28,53 @@ _LOG = logging.getLogger(__name__)
 _WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 3
 _WORKER_CHUNKSIZE = 10
 
+_CANDIDATE_CACHE = PathCandidateCache(
+    'make_dataset',
+    abort_customer_cone_search=lambda: [
+        { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
+        { 'func': abort_on_amount(200), 'desc': 'found 200' },
+    ],
+    abort_full_search=lambda: [
+        { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
+        { 'func': abort_on_amount(200), 'desc': 'found 200' },
+    ],
+    quiet=True,
+)
+
+
+@PickleFileCache.decorate
+def _load_paths(
+        routeviews_dts: t.List[str],
+        ripe_ris_dts: t.List[str],
+        n: int,
+) -> t.List[t.List[int]]:
+    ret: t.List[t.List[int]] = []
+    _LOG.info('Loading paths into memory...')
+
+    for dt in routeviews_dts:
+        for path_meta in routeviews.iter_paths(
+                datetime.fromisoformat(dt), eliminate_path_prepending=True
+        ):
+            ret.append(path_meta['path'])
+
+    for dt in ripe_ris_dts:
+        for path_meta in ripe_ris.iter_paths(
+                datetime.fromisoformat(dt), eliminate_path_prepending=True
+        ):
+            ret.append(path_meta['path'])
+
+
+    _LOG.info('Done loading paths into memory')
+    _LOG.info(f'Shuffling paths and taking {n}')
+
+    np.random.shuffle(ret)
+    ret = ret[:n]
+
+    return ret
+
+
 def _get_path_candidates_worker(path: t.List[int]):
-    return get_path_candidates(
-        source=path[0], sink=path[-1],
-        # since we really only want to find a handful of wrong paths, it does
-        # not matter if we find the correct path before the timeout.
-        abort_customer_cone_search=lambda: [
-            { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
-            { 'func': abort_on_amount(200), 'desc': 'found 200' },
-        ],
-        abort_full_search=lambda: [
-            { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
-            { 'func': abort_on_amount(200), 'desc': 'found 200' },
-        ],
-        quiet=True,
-    ), path
+    return _CANDIDATE_CACHE.get(path[0], path[-1]), path
 
 
 def _iter_path_with_alternatives(
@@ -50,35 +84,12 @@ def _iter_path_with_alternatives(
         ripe_ris_dts: t.List[str],
         progress_msg = 'Preparing Dataset',
 ) -> t.Iterator[t.Tuple[t.List[int], t.List[t.List[int]]]]:
-    real_paths: t.List[t.List[int]] = []
-
-    _LOG.info('Loading paths into memory...')
-
-    for dt in routeviews_dts:
-        for path_meta in routeviews.iter_paths(
-                datetime.fromisoformat(dt), eliminate_path_prepending=True
-        ):
-            real_paths.append(path_meta['path'])
-
-    for dt in ripe_ris_dts:
-        for path_meta in ripe_ris.iter_paths(
-                datetime.fromisoformat(dt), eliminate_path_prepending=True
-        ):
-            real_paths.append(path_meta['path'])
-            
-
-    _LOG.info('Done loading paths into memory')
-    _LOG.info(f'Shuffling paths and taking {real_paths_n}')
-
-    np.random.shuffle(real_paths)
-    real_paths = real_paths[:real_paths_n]
+    real_paths= _load_paths(routeviews_dts, ripe_ris_dts, real_paths_n)
 
     prg_len = 20
     prg = Progress(int(len(real_paths) / prg_len), progress_msg)
 
-    # HACK: initialize cache in main process
-    get_path_candidates(3320, 3320)
-
+    _CANDIDATE_CACHE.init_caches()
 
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     with multiprocessing.Pool(_WORKER_PROCESSES_AMNT) as p:

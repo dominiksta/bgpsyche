@@ -125,7 +125,7 @@ COUNTRY_INFO: t.Dict[Alpha2WithLocation, CountryInfo] = {
     'BM': { 'name': 'Bermuda', 'lat': 32.3333, 'lon': -64.75 },
     'BN': { 'name': 'Brunei', 'lat': 4.5, 'lon': 114.6667 },
     'BO': { 'name': 'Bolivia', 'lat': -17.0, 'lon': -65.0 },
-    'BQ': { 'name': 'TODO', 'lat': 0, 'lon': 0 },
+    'BQ': { 'name': 'Caribbean Netherlands', 'lat': 12.2, 'lon': -68.3 }, # coords for "Bonaire"
     'BR': { 'name': 'Brazil', 'lat': -10.0, 'lon': -55.0 },
     'BS': { 'name': 'Bahamas', 'lat': 24.25, 'lon': -76.0 },
     'BT': { 'name': 'Bhutan', 'lat': 27.5, 'lon': 90.5 },

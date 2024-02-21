@@ -3,7 +3,6 @@ import typing as t
 
 _Path = t.TypeVar('_Path', bound=t.Union[t.List[str], t.List[int], str])
 def eliminate_path_prepending(path: _Path) -> _Path:
-    # TODO: unit test
     _path: t.List[t.Any] = t.cast(t.Any, path)
     if type(path) == str: _path = t.cast(str, path).split(' ')
 
