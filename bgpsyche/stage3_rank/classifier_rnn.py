@@ -1,5 +1,7 @@
+from datetime import datetime
 import logging
 from itertools import pairwise
+from math import ceil
 from statistics import mean
 from types import FrameType
 import typing as t
@@ -9,7 +11,8 @@ import random
 import torch
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
-from torcheval.metrics.functional import binary_accuracy, binary_f1_score
+from torch.utils.tensorboard import SummaryWriter # type: ignore
+from torcheval.metrics.functional import binary_accuracy, binary_f1_score, binary_precision, binary_recall
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import make_dataset
 from bgpsyche.stage3_rank.nn_util import iter_batched
@@ -26,6 +29,12 @@ _RANDOM_SEED = 1337
 torch.manual_seed(_RANDOM_SEED)
 if torch.cuda.is_available: torch.cuda.manual_seed(_RANDOM_SEED)
 _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+_tensorboard_dir = DATA_DIR / 'tensorboard'
+tensorboard_writer = SummaryWriter(
+    _tensorboard_dir /
+    f'bgpsyche_{datetime.now().strftime("%m.%d_%H.%M.%S")}'
+)
 
 # model definition
 # ----------------------------------------------------------------------
@@ -124,8 +133,9 @@ _model_ready = False
 _model_file_path = DATA_DIR / 'models' / 'rnn.pt'
 
 _loss_fn = nn.BCEWithLogitsLoss()
-_optimizer = torch.optim.Adam(params=_model.parameters(), lr=0.001)
 _epochs = 10
+_learning_rate = 0.001
+_optimizer = torch.optim.Adam(params=_model.parameters(), lr=_learning_rate)
 
 # Training & Evaluation
 # ======================================================================
@@ -137,7 +147,7 @@ def _train(
         X_as_level   : t.List[t.List[t.List[t.Union[float, int]]]],
         X_link_level : t.List[t.List[t.List[t.Union[float, int]]]],
         y: t.List,
-        eval_fn: t.Callable[[], t.Any],
+        eval_fn: t.Callable[[int], t.Any],
 ):
     assert (
         len(y) == len(X_path_level) and
@@ -146,17 +156,11 @@ def _train(
     )
 
     _model_file_path.parent.mkdir(exist_ok=True, parents=True)
-    if _model_file_path.exists():
-        _LOG.info('Found model on disk, loading...')
-        _model.load_state_dict(torch.load(_model_file_path))
-        _LOG.info('Model loaded from disk')
-        _model.eval()
-        _model_ready = True
-        return
     _LOG.info('Model not found on disk, initializing training')
 
     prg_i = 0
     prg_steps = int(1000 / _BATCH_SIZE)
+    prg_step_real = lambda: ceil((prg_i * _BATCH_SIZE) / 1000)
     eval_steps = int(10_000 / _BATCH_SIZE)
     prg = Progress(int(len(y) * _epochs / prg_steps / _BATCH_SIZE), 'train')
     losses: t.List[float] = []
@@ -207,10 +211,24 @@ def _train(
             _optimizer.step()
 
             prg_i += 1
-            if prg_i % prg_steps == 0: prg.update(f'E{epoch}: loss {mean(losses)}')
-            if prg_i % eval_steps == 0: eval_fn()
+            if prg_i % prg_steps == 0:
+                tensorboard_writer.add_scalar(
+                    'eval_synthetic_train/loss',
+                    mean(losses[-prg_steps:]),
+                    prg_step_real()
+                )
+                prg.update(f'E{epoch}: loss {mean(losses[-prg_steps:])}')
+
+            if prg_i % eval_steps == 0: eval_fn(prg_step_real())
 
             if cancel: break
+
+    tensorboard_writer.add_scalar(
+        'eval_synthetic_train/loss',
+        mean(losses[-prg_steps:]),
+        ceil((prg_i * _BATCH_SIZE) / 1000)
+    )
+    eval_fn(prg_i)
 
     signal.signal(signal.SIGINT, sigint_orig_handler)
     prg.complete()
@@ -222,50 +240,72 @@ def _train(
 
 
 def _evaluate(
-        X_path_level : t.List[t.List[t.Union[float, int]]],
-        X_as_level   : t.List[t.List[t.List[t.Union[float, int]]]],
-        X_link_level : t.List[t.List[t.List[t.Union[float, int]]]],
-        y: t.List,
-) -> t.List[float]:
+        prg_i: int,
+        X_path_level_test : t.List[t.List[t.Union[float, int]]],
+        X_as_level_test   : t.List[t.List[t.List[t.Union[float, int]]]],
+        X_link_level_test : t.List[t.List[t.List[t.Union[float, int]]]],
+        y_test: t.List,
+        X_path_level_train : t.List[t.List[t.Union[float, int]]],
+        X_as_level_train   : t.List[t.List[t.List[t.Union[float, int]]]],
+        X_link_level_train : t.List[t.List[t.List[t.Union[float, int]]]],
+        y_train: t.List,
+):
     _LOG.info('Evaluating model...')
+
+    def pad(l: t.List) -> torch.Tensor:
+        return pad_sequence([
+            torch.tensor(el, dtype=torch.float32) for el in l
+        ], batch_first=True).to(_device)
+
+    def show(name: str, probs: t.List[float], y: t.List) -> None:
+        f1   = binary_f1_score (torch.tensor(probs), torch.tensor(y))
+        acc  = binary_accuracy (torch.tensor(probs), torch.tensor(y))
+        prec = binary_precision(torch.tensor(probs), torch.tensor(y))
+        rec  = binary_recall   (torch.tensor(probs), torch.tensor(y))
+        tensorboard_writer.add_scalar(f'eval_synthetic_{name}/f1', f1, prg_i)
+        tensorboard_writer.add_scalar(f'eval_synthetic_{name}/accuracy', acc, prg_i)
+        tensorboard_writer.add_scalar(f'eval_synthetic_{name}/precision', prec, prg_i)
+        tensorboard_writer.add_scalar(f'eval_synthetic_{name}/recall', rec, prg_i)
+        _LOG.info(f'Eval {name.upper()} F1={f1} ACC={acc} PREC={prec} REC={rec}')
+
+    def itb(l: t.List) -> t.Iterator[t.List]:
+        return iter_batched(l, _BATCH_SIZE)
+
     with torch.inference_mode():
         prob_test: t.List[float] = []
-        iter_X_path_level = iter_batched(X_path_level, _BATCH_SIZE)
-        iter_X_as_level   = iter_batched(X_as_level, _BATCH_SIZE)
-        iter_X_link_level = iter_batched(X_link_level, _BATCH_SIZE)
-        iter_y            = iter_batched(y, _BATCH_SIZE)
 
-        for X_path_level_batch, X_as_level_batch, X_link_level_batch, y_batch \
-                in zip(
-                    iter_X_path_level, iter_X_as_level, iter_X_link_level, iter_y
-                ):
-            X_path_level_batch = pad_sequence([
-                torch.tensor(el, dtype=torch.float32) for el in X_path_level_batch
-            ], batch_first=True).to(_device)
-            X_as_level_batch = pad_sequence([
-                torch.tensor(el, dtype=torch.float32) for el in X_as_level_batch
-            ], batch_first=True).to(_device)
-            X_link_level_batch = pad_sequence([
-                torch.tensor(el, dtype=torch.float32) for el in X_link_level_batch
-            ], batch_first=True).to(_device)
-
+        for X_path_level_batch, X_as_level_batch, X_link_level_batch in zip(
+                itb(X_path_level_test), itb(X_as_level_test), itb(X_link_level_test)
+        ):
             y_logits = _model(
-                X_as_level_batch, X_link_level_batch, X_path_level_batch
+                pad(X_as_level_batch), pad(X_link_level_batch), pad(X_path_level_batch)
             ).squeeze()
             prob_test += [ float(n) for n in torch.sigmoid(y_logits) ]
 
-        f1 = binary_f1_score(torch.tensor(prob_test), torch.tensor(y))
-        acc = binary_accuracy(torch.tensor(prob_test), torch.tensor(y))
-        _LOG.info(f'F1={f1} ACC={acc}')
+        show('test', prob_test, y_test)
 
-    return prob_test
+        prob_train: t.List[float] = []
+
+        for X_path_level_batch, X_as_level_batch, X_link_level_batch in zip(
+                itb(X_path_level_train), itb(X_as_level_train), itb(X_link_level_train)
+        ):
+            y_logits = _model(
+                pad(X_as_level_batch), pad(X_link_level_batch), pad(X_path_level_batch)
+            ).squeeze()
+            prob_train += [ float(n) for n in torch.sigmoid(y_logits) ]
+
+        show('train', prob_train, y_train)
+
 
 _cpu_model = _RNN().to('cpu')
 
-def predict_probs(paths: t.List[t.List[int]]) -> t.List[float]:
+def predict_probs(
+        paths: t.List[t.List[int]],
+        retrain = True
+) -> t.List[float]:
     global _model_ready, _device
     if not _model_ready:
-        if not _model_file_path.exists(): ready_model()
+        if not _model_file_path.exists() or retrain: ready_model()
         _cpu_model.load_state_dict(torch.load(_model_file_path, map_location='cpu'))
         _device = 'cpu'
         _model_ready = True
@@ -317,12 +357,46 @@ def ready_model():
 
     _LOG.info('Dataset prepared')
 
-    def _evaluate_on_test():
-        return _evaluate(
-            X_path_level_test,
-            X_as_level_test,
-            X_link_level_test,
-            y_test
+    tensorboard_writer.add_graph(_model, (
+        pad_sequence([
+            torch.tensor(el, dtype=torch.float32) for el in X_as_level[:10]
+        ], batch_first=True).to(_device),
+        pad_sequence([
+            torch.tensor(el, dtype=torch.float32) for el in X_link_level[:10]
+        ], batch_first=True).to(_device),
+        pad_sequence([
+            torch.tensor(el, dtype=torch.float32) for el in X_path_level[:10]
+        ], batch_first=True).to(_device),
+    ))
+
+    tensorboard_writer.add_text('hyperparameters', f"""
+```
+Training:
+----------------------------------------------------------------------
+
+Dataset Size  = {len(y):_}
+Epochs        = {_epochs}
+Batch Size    = {_BATCH_SIZE}
+Learning Rate = {_learning_rate}
+
+Network Definition:
+----------------------------------------------------------------------
+
+_RNN_AS_LEVEL_NUM_LAYERS    = {_RNN_AS_LEVEL_NUM_LAYERS}
+_RNN_AS_LEVEL_HIDDEN_SIZE   = {_RNN_AS_LEVEL_HIDDEN_SIZE}
+_RNN_LINK_LEVEL_NUM_LAYERS  = {_RNN_LINK_LEVEL_NUM_LAYERS}
+_RNN_LINK_LEVEL_HIDDEN_SIZE = {_RNN_LINK_LEVEL_HIDDEN_SIZE}
+_PATH_MLP_OUT_SIZE          = {_PATH_MLP_OUT_SIZE}
+```
+""")
+
+    tensorboard_writer.flush()
+
+    def _evaluate_on_test(prg_i: int):
+        _evaluate(
+            prg_i,
+            X_path_level_test, X_as_level_test, X_link_level_test, y_test,
+            X_path_level_train, X_as_level_train, X_link_level_train, y_train,
         )
 
     _train(
@@ -332,4 +406,3 @@ def ready_model():
         y_train,
         _evaluate_on_test
     )
-    _evaluate_on_test()

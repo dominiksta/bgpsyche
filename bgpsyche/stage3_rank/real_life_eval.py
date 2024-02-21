@@ -1,11 +1,11 @@
 from datetime import datetime
 from statistics import mean
 import random
-from os import cpu_count
 import typing as t
 import logging
 import multiprocessing
 
+from matplotlib import pyplot as plt
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.stage3_rank import classifier_rnn
 from bgpsyche.service.ext import routeviews
@@ -80,6 +80,7 @@ def real_life_eval_model():
     found_positions: t.List[float] = []
     candidate_lengths: t.List[int] = []
     iter = 0
+    prg_step = 10
 
     _CANDIDATE_CACHE.init_caches()
 
@@ -99,7 +100,7 @@ def real_life_eval_model():
             candidate_lengths.append(w_resp['candidates_length'])
             found_positions.append(w_resp['found_position'])
 
-            if iter % 10 == 0:
+            if iter % prg_step == 0:
                 avg_found = round(mean(found_positions), 2)
                 avg_len = round(mean(candidate_lengths))
                 percent_correct = round(
@@ -123,6 +124,32 @@ def real_life_eval_model():
                     f'Top 10: {w_resp["found_position"] < 10} | ' +
                     f'{w_resp["path"]}'
                 )
+
+                plt.hist(found_positions, bins=100, range=(0, 500))
+                classifier_rnn.tensorboard_writer.add_figure(
+                    'eval_real/pos', plt.gcf(), iter
+                )
+                plt.ecdf(found_positions)
+                plt.xlim([0, 50])
+                classifier_rnn.tensorboard_writer.add_figure(
+                    'eval_real/pos_cdf_begin', plt.gcf(), iter
+                )
+                plt.ecdf(found_positions)
+                plt.xlim([0, 800])
+                classifier_rnn.tensorboard_writer.add_figure(
+                    'eval_real/pos_cdf_full', plt.gcf(), iter
+                )
+
+                for subtag, value in {
+                        'percent_correct': percent_correct_real,
+                        'percent_correct_top_3': percent_top_3_real,
+                        'percent_correct_ignore_skipped': percent_correct,
+                        'percent_skipped': percent_skipped,
+                        'position': mean(found_positions[-prg_step:]),
+                }.items():
+                    classifier_rnn.tensorboard_writer.add_scalar(
+                        f'eval_real/{subtag}', value, iter
+                    )
 
 
 def _main():

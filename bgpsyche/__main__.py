@@ -1,5 +1,6 @@
 import argparse
 import logging
+from os import system
 from pprint import pprint
 
 from bgpsyche.logging_config import logging_setup
@@ -12,21 +13,18 @@ _LOG = logging.getLogger(__name__)
 
 _parser = argparse.ArgumentParser()
 
-_parser.add_argument(
-    '--stage', choices=[
-        '01_get_path_candidates',
-        '02_enrich_path_candidates',
-    ],
-    required=False
-)
-
-_parser.add_argument('--sync-peeringdb', action='store_true', required=False)
+_parser.add_argument('action', choices=[
+    'test_stage1',
+    'test_stage2',
+    'tensorboard',
+    'peeringdb_sync',
+])
 
 _args = _parser.parse_args()
 
-if _args.sync_peeringdb: peeringdb.Client.sync()
+if _args.action == 'peeringdb_sync': peeringdb.Client.sync()
 
-if _args.stage == '01_get_path_candidates':
+elif _args.action == 'test_stage1':
     # 23673 23764 4134 4538 23910 24371
     candidates = get_path_candidates(23673, 24371)
     print(len(candidates))
@@ -37,9 +35,13 @@ if _args.stage == '01_get_path_candidates':
     pprint(candidates[:10])
 
 
-elif _args.stage == '02_enrich_path_candidates':
+elif _args.action == 'test_stage2':
     candidates = get_path_candidates(14840, 265620)
     print(len(candidates))
 
     for path in candidates[:50]:
         pprint({ 'path': path, 'features': enrich_path(path) })
+
+
+elif _args.action == 'tensorboard':
+    system('tensorboard --load_fast=false --logdir=./bgpsyche/data/tensorboard/')
