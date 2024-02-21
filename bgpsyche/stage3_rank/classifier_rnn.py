@@ -58,7 +58,9 @@ class _RNN(nn.Module):
         )
 
         self.l1 = nn.Linear(_INPUT_SIZE_PATH, 16)
+        self.tanh1 = nn.Tanh()
         self.l2 = nn.Linear(16, _PATH_MLP_OUT_SIZE)
+        self.tanh2 = nn.Tanh()
 
         self.l_out1 = nn.Linear(
             _RNN_AS_LEVEL_HIDDEN_SIZE
@@ -66,7 +68,9 @@ class _RNN(nn.Module):
             + _PATH_MLP_OUT_SIZE,
             64
         )
+        self.tanh_out1 = nn.Tanh()
         self.l_out2 = nn.Linear(64, 16)
+        self.tanh_out2 = nn.Tanh()
         self.l_out3 = nn.Linear(16, 1)
 
     def forward(
@@ -87,6 +91,9 @@ class _RNN(nn.Module):
             _RNN_LINK_LEVEL_HIDDEN_SIZE
         ).to(_device)
 
+        # note: torch.nn.RNN uses the tanh activation function internally for
+        # non-linearity by default
+
         out_rnn_as_level, _ = self.rnn_as_level(x_as_level, hidden_0_as_level)
         # out shape: (batch_size, seq_length, hidden_size)
         # - we want just the last hidden state -> we want shape (batch_size, hidden_size)
@@ -96,13 +103,18 @@ class _RNN(nn.Module):
         out_rnn_link_level = out_rnn_link_level[:, -1, :]
 
         out_mlp = self.l1(x_path_level)
+        out_mlp = self.tanh1(out_mlp)
         out_mlp = self.l2(out_mlp)
+        out_mlp = self.tanh2(out_mlp)
 
         out = self.l_out1(torch.concat((
             out_rnn_as_level, out_rnn_link_level, out_mlp
         ), dim=1))
+        out = self.tanh_out1(out)
         out = self.l_out2(out)
+        out = self.tanh_out2(out)
         out = self.l_out3(out)
+        # sigmoid is implied by BCEWithLogitsLoss
 
         return out
 
