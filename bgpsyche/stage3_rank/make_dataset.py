@@ -130,7 +130,7 @@ class DatasetEl(t.TypedDict):
 @run_in_pypy(cache=JSONFileCache)
 def make_dataset(
         candidates_per_real_path = 1,
-        real_paths_n = 10_000,
+        real_paths_n = 30_000,
         routeviews_dts: t.List[str] = [
             '2023-05-01T00:00',
         ],

@@ -1,25 +1,16 @@
 import contextlib
-from pathlib import Path
-from time import sleep
 import typing as t
-import sqlite3
 import logging
-from bgpsyche.stage1_candidates.from_graph import GetPathCandidatesAbortConditions, abort_on_amount, abort_on_timeout
 
+from bgpsyche.stage1_candidates.from_graph import (
+    GetPathCandidatesAbortConditions, abort_on_amount, abort_on_timeout
+)
 from bgpsyche.util.const import DATA_DIR
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
+from bgpsyche.util.retry import retry
+from bgpsyche.util.sql import sqlite3_connect_retry
 
 _LOG = logging.getLogger(__name__)
-
-def _connect(file: Path) -> sqlite3.Connection:
-    try:
-        return sqlite3.connect(file, timeout=10)
-    except sqlite3.Error as e:
-        _LOG.warning(
-            f'Could not connect to DB after 10s, retrying. Error: {e}'
-        )
-        sleep(5)
-        return _connect(file)
 
 class PathCandidateCache:
 
@@ -42,7 +33,7 @@ class PathCandidateCache:
         self._cache_db_path = \
             DATA_DIR / 'cache' / 'path_candidates' / f'{name}.sqlite3'
         self._cache_db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._con = lambda: contextlib.closing(_connect(self._cache_db_path))
+        self._con = lambda: sqlite3_connect_retry(self._cache_db_path)
 
         with self._con() as con, con as tx:
             tx.execute("""
@@ -59,6 +50,7 @@ class PathCandidateCache:
         return self
 
 
+    @retry()
     def get(self, source: int, sink: int) -> t.List[t.List[int]]:
         candidates: t.List[t.List[int]] = []
         with self._con() as con, con as tx:
