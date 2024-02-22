@@ -223,6 +223,8 @@ def _train(
 
             if cancel: break
 
+        if cancel: break
+
     tensorboard_writer.add_scalar(
         'eval_synthetic_train/loss',
         mean(losses[-prg_steps:]),

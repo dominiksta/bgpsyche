@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from platform import python_implementation
 from pprint import pformat
+import signal
 from sys import stdout
 import typing as t
 import subprocess
@@ -111,6 +112,9 @@ else:
                 f_code.flush()
 
                 module_name = Path(f_code.name).name.split('.py')[0]
+                # we ignore SIGINT (Ctrl+C) here because we want to be able to
+                # handle it in PyPy
+                original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
                 completed = subprocess.run(
                     [
                         interpreter, '-m',
@@ -121,6 +125,7 @@ else:
                     encoding='utf-8',
                     stdout=stdout,
                 )
+                signal.signal(signal.SIGINT, original_sigint_handler)
                 if completed.returncode != 0:
                     raise ValueError(f'Non-zero return code {completed.returncode}')
 
