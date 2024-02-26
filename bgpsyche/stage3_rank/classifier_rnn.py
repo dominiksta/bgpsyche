@@ -159,7 +159,7 @@ def _train(
     _LOG.info('Model not found on disk, initializing training')
 
     prg_i = 0
-    prg_steps = int(1000 / _BATCH_SIZE)
+    prg_steps = ceil(1000 / _BATCH_SIZE)
     prg_step_real = lambda: ceil((prg_i * _BATCH_SIZE) / 1000)
     eval_steps = int(10_000 / _BATCH_SIZE)
     prg = Progress(int(len(y) * _epochs / prg_steps / _BATCH_SIZE), 'train')
@@ -228,9 +228,9 @@ def _train(
     tensorboard_writer.add_scalar(
         'eval_synthetic_train/loss',
         mean(losses[-prg_steps:]),
-        ceil((prg_i * _BATCH_SIZE) / 1000)
+        prg_step_real()
     )
-    eval_fn(prg_i)
+    eval_fn(prg_step_real())
 
     signal.signal(signal.SIGINT, sigint_orig_handler)
     prg.complete()
