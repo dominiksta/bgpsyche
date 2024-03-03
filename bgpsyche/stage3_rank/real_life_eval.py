@@ -5,6 +5,9 @@ import typing as t
 import logging
 import multiprocessing
 
+import matplotlib
+matplotlib.use('Agg') # dont render an invisible tk window (which does not play
+                      # well with multiprocessing)
 from matplotlib import pyplot as plt
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.stage3_rank import classifier_rnn
@@ -26,32 +29,12 @@ class _PathWithProb(t.TypedDict):
     prob: float
 
 class _RealLifeEvalModelWorkerResp(t.TypedDict):
-    candidates_length: int
-    found_position: int
+    candidates: t.List[t.List[int]]
     path: t.List[int]
 
 def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
-
     candidates = _CANDIDATE_CACHE.get(path[0], path[-1])
-    if path not in candidates:
-        _LOG.info('skipping bc not in candidates')
-        return {
-            'candidates_length': len(candidates),
-            'found_position': -1, 'path': path,
-        }
-
-    probs: t.List[_PathWithProb] = [
-        { 'path': candidates[i], 'prob': prob }
-        for i, prob in enumerate(_PREDICT_FUN(candidates))
-    ]
-    probs.sort(key=lambda el: el['prob'], reverse=True)
-    candidates_probs = [ p['path'] for p in probs ]
-
-    return {
-        'candidates_length': len(candidates_probs),
-        'found_position': candidates_probs.index(path),
-        'path': path,
-    }
+    return { 'candidates': candidates, 'path': path }
 
 
 def _load_test_paths() -> t.List[t.List[int]]:
@@ -93,12 +76,25 @@ def real_life_eval_model():
             chunksize=_WORKER_CHUNKSIZE
         ):
             iter += 1
-            if w_resp['found_position'] == -1:
+
+            probs: t.List[_PathWithProb] = [
+                { 'path': w_resp['candidates'][i], 'prob': prob }
+                for i, prob in enumerate(_PREDICT_FUN(w_resp['candidates']))
+            ]
+            probs.sort(key=lambda el: el['prob'], reverse=True)
+            candidates_probs = [ p['path'] for p in probs ]
+
+            path = w_resp['path']
+            candidates_length = len(candidates_probs)
+
+            if path not in candidates_probs:
                 skipped += 1
                 continue
 
-            candidate_lengths.append(w_resp['candidates_length'])
-            found_positions.append(w_resp['found_position'])
+            found_position = candidates_probs.index(path)
+
+            candidate_lengths.append(candidates_length)
+            found_positions.append(found_position)
 
             if iter % prg_step == 0:
                 avg_found = round(mean(found_positions), 2)
@@ -121,7 +117,7 @@ def real_life_eval_model():
                     f'S: {percent_skipped} | ' +
                     f'Pos: {found_positions[-1]}, Avg Pos: {avg_found} | ' +
                     f'Len: {candidate_lengths[-1]}, Avg Len: {avg_len} | ' +
-                    f'Top 10: {w_resp["found_position"] < 10} | ' +
+                    f'Top 10: {found_position < 10} | ' +
                     f'{w_resp["path"]}'
                 )
 
@@ -145,7 +141,7 @@ def real_life_eval_model():
                         'percent_correct_top_3': percent_top_3_real,
                         'percent_correct_ignore_skipped': percent_correct,
                         'percent_skipped': percent_skipped,
-                        'position': mean(found_positions[-prg_step:]),
+                        'position': mean(found_positions),
                 }.items():
                     classifier_rnn.tensorboard_writer.add_scalar(
                         f'eval_real/{subtag}', value, iter

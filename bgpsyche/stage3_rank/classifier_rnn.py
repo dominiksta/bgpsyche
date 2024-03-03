@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime
 import logging
 from itertools import pairwise
@@ -10,11 +11,11 @@ import random
 
 import torch
 from torch import nn
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence
 from torch.utils.tensorboard import SummaryWriter # type: ignore
 from torcheval.metrics.functional import binary_accuracy, binary_f1_score, binary_precision, binary_recall
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
-from bgpsyche.stage3_rank.make_dataset import make_dataset
+from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
 from bgpsyche.stage3_rank.nn_util import iter_batched
 from bgpsyche.stage3_rank.vectorize_features import (
     AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES,
@@ -91,25 +92,18 @@ class _RNN(nn.Module):
             # shape [packed] (batch_size, amnt_of_path_features)
             x_path_level: torch.Tensor,
     ) -> torch.Tensor:
-        hidden_0_as_level = torch.zeros(
-            _RNN_AS_LEVEL_NUM_LAYERS, x_as_level.size(0),
-            _RNN_AS_LEVEL_HIDDEN_SIZE
-        ).to(_device)
-        hidden_0_link_level = torch.zeros(
-            _RNN_LINK_LEVEL_NUM_LAYERS, x_link_level.size(0),
-            _RNN_LINK_LEVEL_HIDDEN_SIZE
-        ).to(_device)
-
         # note: torch.nn.RNN uses the tanh activation function internally for
         # non-linearity by default
 
-        out_rnn_as_level, _ = self.rnn_as_level(x_as_level, hidden_0_as_level)
-        # out shape: (batch_size, seq_length, hidden_size)
+        out_rnn_as_level, _ = self.rnn_as_level(x_as_level)
+        # out shape: (batch_size, [padded] seq_length, hidden_size)
         # - we want just the last hidden state -> we want shape (batch_size, hidden_size)
-        out_rnn_as_level = out_rnn_as_level[:, -1, :]
+        out_rnn_as_level = \
+            pad_packed_sequence(out_rnn_as_level, batch_first=True)[0][:, -1, :]
 
-        out_rnn_link_level, _ = self.rnn_link_level(x_link_level, hidden_0_link_level)
-        out_rnn_link_level = out_rnn_link_level[:, -1, :]
+        out_rnn_link_level, _ = self.rnn_link_level(x_link_level)
+        out_rnn_link_level = \
+            pad_packed_sequence(out_rnn_link_level, batch_first=True)[0][:, -1, :]
 
         out_mlp = self.l1(x_path_level)
         out_mlp = self.tanh1(out_mlp)
@@ -189,15 +183,15 @@ def _train(
                 in zip(
                     iter_X_path_level, iter_X_as_level, iter_X_link_level, iter_y
                 ):
-            X_path_level_batch = pad_sequence([
-                torch.tensor(el, dtype=torch.float32) for el in X_path_level_batch
-            ], batch_first=True).to(_device)
-            X_as_level_batch = pad_sequence([
+            X_path_level_batch = torch.tensor(
+                X_path_level_batch, dtype=torch.float32
+            ).to(_device)
+            X_as_level_batch = pack_sequence([
                 torch.tensor(el, dtype=torch.float32) for el in X_as_level_batch
-            ], batch_first=True).to(_device)
-            X_link_level_batch = pad_sequence([
+            ], enforce_sorted=False).to(_device)
+            X_link_level_batch = pack_sequence([
                 torch.tensor(el, dtype=torch.float32) for el in X_link_level_batch
-            ], batch_first=True).to(_device)
+            ], enforce_sorted=False).to(_device)
             y_batch = torch.tensor(y_batch, dtype=torch.float32, device=_device)
 
             y_logits = _model(
@@ -243,21 +237,33 @@ def _train(
 
 def _evaluate(
         prg_i: int,
-        X_path_level_test : t.List[t.List[t.Union[float, int]]],
-        X_as_level_test   : t.List[t.List[t.List[t.Union[float, int]]]],
-        X_link_level_test : t.List[t.List[t.List[t.Union[float, int]]]],
-        y_test: t.List,
-        X_path_level_train : t.List[t.List[t.Union[float, int]]],
-        X_as_level_train   : t.List[t.List[t.List[t.Union[float, int]]]],
-        X_link_level_train : t.List[t.List[t.List[t.Union[float, int]]]],
-        y_train: t.List,
+        dataset_test: t.List[DatasetEl],
+        dataset_train: t.List[DatasetEl],
+        max_eval_paths_n = 5_000,
 ):
     _LOG.info('Evaluating model...')
 
-    def pad(l: t.List) -> torch.Tensor:
-        return pad_sequence([
+    def take(l):
+        copy = deepcopy(l)
+        random.shuffle(copy)
+        return copy[:max_eval_paths_n]
+
+    dataset_test  = take(dataset_test)
+    dataset_train = take(dataset_train)
+
+    X_path_level_test  = [ el['path_features'] for el in dataset_test ]
+    X_as_level_test    = [ el['as_features'] for el in dataset_test ]
+    X_link_level_test  = [ el['link_features'] for el in dataset_test ]
+    y_test             = [ int(el['real']) for el in dataset_test ]
+    X_path_level_train = [ el['path_features'] for el in dataset_train ]
+    X_as_level_train   = [ el['as_features'] for el in dataset_train ]
+    X_link_level_train = [ el['link_features'] for el in dataset_train ]
+    y_train            = [ int(el['real']) for el in dataset_train ]
+
+    def pack(l: t.List):
+        return pack_sequence([
             torch.tensor(el, dtype=torch.float32) for el in l
-        ], batch_first=True).to(_device)
+        ], enforce_sorted=False).to(_device)
 
     def show(name: str, probs: t.List[float], y: t.List) -> None:
         f1   = binary_f1_score (torch.tensor(probs), torch.tensor(y))
@@ -280,7 +286,8 @@ def _evaluate(
                 itb(X_path_level_test), itb(X_as_level_test), itb(X_link_level_test)
         ):
             y_logits = _model(
-                pad(X_as_level_batch), pad(X_link_level_batch), pad(X_path_level_batch)
+                pack(X_as_level_batch), pack(X_link_level_batch),
+                torch.tensor(X_path_level_batch, dtype=torch.float32, device=_device),
             ).squeeze()
             prob_test += [ float(n) for n in torch.sigmoid(y_logits) ]
 
@@ -292,7 +299,8 @@ def _evaluate(
                 itb(X_path_level_train), itb(X_as_level_train), itb(X_link_level_train)
         ):
             y_logits = _model(
-                pad(X_as_level_batch), pad(X_link_level_batch), pad(X_path_level_batch)
+                pack(X_as_level_batch), pack(X_link_level_batch),
+                torch.tensor(X_path_level_batch, dtype=torch.float32, device=_device),
             ).squeeze()
             prob_train += [ float(n) for n in torch.sigmoid(y_logits) ]
 
@@ -303,7 +311,7 @@ _cpu_model = _RNN().to('cpu')
 
 def predict_probs(
         paths: t.List[t.List[int]],
-        retrain = True
+        retrain = True,
 ) -> t.List[float]:
     global _model_ready, _device
     if not _model_ready:
@@ -311,24 +319,32 @@ def predict_probs(
         _cpu_model.load_state_dict(torch.load(_model_file_path, map_location='cpu'))
         _device = 'cpu'
         _model_ready = True
+        _cpu_model.eval()
 
-    ret: t.List[float] = []
+    X_as_level = pack_sequence([
+        torch.tensor(
+            [ vectorize_as_features(enrich_asn(asn)) for asn in path ],
+            dtype=torch.float32
+        )
+        for path in paths
+    ], enforce_sorted=False)
+    X_link_level = pack_sequence([
+        torch.tensor(
+            [ vectorize_link_features(enrich_link(source, sink))
+              for source, sink in pairwise(path) ],
+            dtype=torch.float32
+        )
+        for path in paths
+    ], enforce_sorted=False)
+    X_path_level = torch.tensor(
+        [ vectorize_path_features(enrich_path(path)) for path in paths ],
+        dtype=torch.float32
+    )
 
-    for path in paths:
-        as_features = [[ vectorize_as_features(enrich_asn(asn)) for asn in path ]]
-        path_features = [ vectorize_path_features(enrich_path(path)) ]
-        link_features = [[
-            vectorize_link_features(enrich_link(source, sink))
-            for source, sink in pairwise(path)
-        ]]
-        y_logits = _cpu_model(
-            torch.tensor(as_features, dtype=torch.float32),
-            torch.tensor(link_features, dtype=torch.float32),
-            torch.tensor(path_features, dtype=torch.float32),
-        ).squeeze()
-        ret.append(float(torch.sigmoid(y_logits)))
+    with torch.inference_mode():
+        y_logits = _cpu_model(X_as_level, X_link_level, X_path_level)
 
-    return ret
+    return [ float(el) for el in torch.sigmoid(y_logits) ]
 
 
 def ready_model():
@@ -343,40 +359,22 @@ def ready_model():
     train_size = int(len(dataset) * (1 - test_split))
     _LOG.info(f'Train size = {train_size}')
 
-    X_path_level = [ el['path_features'] for el in dataset ]
-    X_as_level   = [ el['as_features'] for el in dataset ]
-    X_link_level = [ el['link_features'] for el in dataset ]
-    y            = [ int(el['real']) for el in dataset ]
+    dataset_train = dataset[:train_size]
+    dataset_test  = dataset[train_size:]
 
-    X_path_level_train = X_path_level[:train_size]
-    X_path_level_test  = X_path_level[train_size:]
-    X_as_level_train   = X_as_level[:train_size]
-    X_as_level_test    = X_as_level[train_size:]
-    X_link_level_train = X_link_level[:train_size]
-    X_link_level_test  = X_link_level[train_size:]
-    y_train            = y[:train_size]
-    y_test             = y[train_size:]
+    X_path_level_train = [ el['path_features'] for el in dataset_train ]
+    X_as_level_train   = [ el['as_features'] for el in dataset_train ]
+    X_link_level_train = [ el['link_features'] for el in dataset_train ]
+    y_train            = [ int(el['real']) for el in dataset_train ]
 
     _LOG.info('Dataset prepared')
-
-    tensorboard_writer.add_graph(_model, (
-        pad_sequence([
-            torch.tensor(el, dtype=torch.float32) for el in X_as_level[:10]
-        ], batch_first=True).to(_device),
-        pad_sequence([
-            torch.tensor(el, dtype=torch.float32) for el in X_link_level[:10]
-        ], batch_first=True).to(_device),
-        pad_sequence([
-            torch.tensor(el, dtype=torch.float32) for el in X_path_level[:10]
-        ], batch_first=True).to(_device),
-    ))
 
     tensorboard_writer.add_text('hyperparameters', f"""
 ```
 Training:
 ----------------------------------------------------------------------
 
-Dataset Size  = {len(y):_}
+Dataset Size  = {len(dataset):_}
 Epochs        = {_epochs}
 Batch Size    = {_BATCH_SIZE}
 Learning Rate = {_learning_rate}
@@ -395,11 +393,7 @@ _PATH_MLP_OUT_SIZE          = {_PATH_MLP_OUT_SIZE}
     tensorboard_writer.flush()
 
     def _evaluate_on_test(prg_i: int):
-        _evaluate(
-            prg_i,
-            X_path_level_test, X_as_level_test, X_link_level_test, y_test,
-            X_path_level_train, X_as_level_train, X_link_level_train, y_train,
-        )
+        _evaluate(prg_i, dataset_test, dataset_train)
 
     _train(
         X_path_level_train,

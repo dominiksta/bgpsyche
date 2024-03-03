@@ -129,8 +129,8 @@ class DatasetEl(t.TypedDict):
 
 @run_in_pypy(cache=JSONFileCache)
 def make_dataset(
-        candidates_per_real_path = 1,
-        real_paths_n = 30_000,
+        candidates_per_real_path = 10,
+        real_paths_n = 10_000,
         routeviews_dts: t.List[str] = [
             '2023-05-01T00:00',
         ],
@@ -160,6 +160,10 @@ def make_dataset(
             routeviews_dts=routeviews_dts,
             ripe_ris_dts=ripe_ris_dts,
     ):
+        if len(alternatives) == 0:
+            _LOG.warning(f'No alternatives found for path {real}, skipping')
+            continue
+
         for alternative in alternatives:
             out.append(make_single_element(real=False, path=alternative))
 
