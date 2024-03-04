@@ -1,9 +1,10 @@
 import typing as t
 from time import mktime
 
-import numpy as np
+from bgpsyche.stage2_enrich.as_category import AS_CATEGORY
 from bgpsyche.stage2_enrich.democracy_index import democracy_index_avg
 from bgpsyche.stage2_enrich.types import ASFeaturesRaw, LinkFeatures, PathFeatures
+from bgpsyche.stage3_rank.vectorize_util import one_hot
 
 PATH_FEATURE_VECTOR_NAMES: t.List[str] = [
     'length',
@@ -42,7 +43,19 @@ AS_FEATURE_VECTOR_NAMES: t.List[str] = [
     'rirstat_born',
     'rirstat_addr_count_v4',
     'rirstat_addr_count_v6',
+    'category_unknown',
+    'category_transit_access',
+    'category_content',
+    'category_enterprise',
+    'category_educational_research',
+    'category_non_profit',
+    'category_route_server',
+    'category_network_services',
+    'category_route_collector',
+    'category_government',
 ]
+
+_one_hot_as_category = one_hot(list(AS_CATEGORY), optional=False)
 
 def vectorize_as_features(features: ASFeaturesRaw) -> t.List[t.Union[int, float]]:
     return [
@@ -52,4 +65,5 @@ def vectorize_as_features(features: ASFeaturesRaw) -> t.List[t.Union[int, float]
         if features['rirstat_born'] is not None else -1,
         features['rirstat_addr_count_v4'] or -1,
         features['rirstat_addr_count_v6'] or -1,
+        *_one_hot_as_category(features['as_category']),
     ]

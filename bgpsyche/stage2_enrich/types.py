@@ -1,6 +1,7 @@
 from datetime import date
 import typing as t
 
+from bgpsyche.stage2_enrich.as_category import ASCategory
 from bgpsyche.util.bgp.relationship import RelationshipKind
 
 
@@ -18,6 +19,8 @@ class ASFeaturesRaw(t.TypedDict):
     # TODO: try replacing with our own customer cone computation from t1 mrt data
     as_rank: int
     rirstat_born: t.Optional[date]
+
+    as_category: ASCategory
 
     # - a smaller value could mean both that the AS is small or that is is a
     #   transit provider. content networks prob have larger prefixes because

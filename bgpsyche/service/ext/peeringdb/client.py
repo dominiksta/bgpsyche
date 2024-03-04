@@ -68,8 +68,14 @@ class Client():
 
     @staticmethod
     def get_network_by_asn(asn: int) -> t.Optional[Network]:
-        try: return _pdb.get(resource.Network, asn)
-        except models.Network.DoesNotExist: return None
+        resp = _pdb.all(resource.Network).filter(asn=asn)
+        ret = resp[0] if len(resp) != 0 else None
+
+        if ret is not None:
+            # no idea
+            if ret.info_type == '': ret.info_type = 'Not Disclosed'
+
+        return ret
 
 
     class _RouteServer(t.TypedDict):

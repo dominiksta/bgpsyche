@@ -5,6 +5,7 @@ from bgpsyche.service.ext.asrank import get_asrank
 from bgpsyche.service.ext.caida_asrel import get_caida_asrel
 from bgpsyche.service.ext.ripe_as_names_countries import get_ripe_as_country
 from bgpsyche.service.ext.rir_delegations import get_rir_asstats
+from bgpsyche.stage2_enrich.as_category import get_as_category
 from bgpsyche.stage2_enrich.global_trade import get_trade_relationships
 from bgpsyche.stage2_enrich.democracy_index import get_democracy_index
 from bgpsyche.stage2_enrich.types import ASFeaturesRaw, LinkFeatures, PathFeatures
@@ -24,6 +25,7 @@ def enrich_asn(asn: int) -> ASFeaturesRaw:
     ret: ASFeaturesRaw = {
         'country_democracy_index': democracy_index,
         'as_rank': get_asrank(asn),
+        'as_category': get_as_category(asn),
         'rirstat_addr_count_v4': None,
         'rirstat_addr_count_v6': None,
         'rirstat_born': None,
