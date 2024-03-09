@@ -16,11 +16,14 @@ from bgpsyche.util.net import download_file_cached
 _LOG = logging.getLogger(__name__)
 
 
-def download_caida_asrel(date: date) -> Path:
-    file = f'{date.strftime("%Y%m%d")}.as-rel.txt.bz2'
-    # TODO: difference between serial-1 and serial-2 ?
+def download_caida_asrel(
+        date: date,
+        ver: t.Literal[1, 2] = 2,
+) -> Path:
+    fdate = date.strftime("%Y%m%d")
+    file = f'{fdate}.as-rel' + ('2' if ver == 2 else '') + '.txt.bz2'
     return download_file_cached(
-        f'http://data.caida.org/datasets/as-relationships/serial-1/{file}',
+        f'http://data.caida.org/datasets/as-relationships/serial-{ver}/{file}',
         DATA_DIR / file
     )
 
@@ -32,6 +35,13 @@ _num2relationship: t.Dict[int, RelationshipKind] = { 1: 'c2p', 0: 'p2p', -1: 'p2
 def get_caida_asrel(
         date: date,
         enforce_t1 = True,
+        # - Version 1 is inferred from bgp paths using asrank (Luckie et al. "AS
+        #   relationships, customer cones, and validation",
+        #   10.1145/2504730.2504735)
+        # - Version 2 adds ~250k (roughly double) p2p relationships inferred
+        #   from bgp community attributes (Giotsas et al. "Inferring
+        #   multilateral peering", 10.1145/2535372.2535390)
+        ver: t.Literal[1, 2] = 2,
 ) -> Source2Sink2Rel:
     s2s2r: Source2Sink2Rel = defaultdict(dict)
     _LOG.info('Parsing CAIDA AS relationship file')
@@ -39,10 +49,13 @@ def get_caida_asrel(
     def parse_relationship_line(line: str) -> Relationship:
         # <provider-as>|<customer-as>|-1
         # <peer-as>|<peer-as>|0
-        source, sink, rel = line.strip().split("|")
-        return int(source), int(sink), _num2relationship[int(rel)]
+        split  = line.strip().split("|")
+        source = int(split[ 0])
+        sink   = int(split[1])
+        rel    = _num2relationship[int(split[2])]
+        return source, sink, rel
 
-    asrel_file = download_caida_asrel(date)
+    asrel_file = download_caida_asrel(date, ver)
     with bz2.open(asrel_file, 'rt') as f:
         asns: t.Set[int] = set()
         count_parsed = 0

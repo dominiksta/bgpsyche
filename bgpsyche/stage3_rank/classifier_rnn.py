@@ -34,7 +34,7 @@ _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 _tensorboard_dir = DATA_DIR / 'tensorboard'
 tensorboard_writer = SummaryWriter(
     _tensorboard_dir /
-    f'bgpsyche_{datetime.now().strftime("%m.%d_%H.%M.%S")}'
+    f'{datetime.now().strftime("%m.%d_%H.%M.%S")}_{input("Name run: ")}'
 )
 
 # model definition

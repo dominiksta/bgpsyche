@@ -19,11 +19,12 @@ def retry(
 ) -> t.Callable[[_CallableT], _CallableT]:
 
     sleep_current = sleep_base_s
+    repeated = 1
     
     def inner_wrapper(fun: _CallableT) -> _CallableT:
         @wraps(fun)
         def inner_exec(*args, **kwargs):
-            nonlocal retries, sleep_current
+            nonlocal retries, sleep_current, repeated
 
             ex: t.Optional[Exception] = None
             while retries == 'inf' or retries > 0:
@@ -33,14 +34,15 @@ def retry(
                     ex = e
                     if retries != 'inf': retries -= 1
                     sleep_current = min(
-                        sleep_max_s, sleep_base_s * sleep_multiplier
+                        sleep_max_s, sleep_current * sleep_multiplier
                     )
                     _LOG.warning(
                         f'Retrying {get_func_module(fun)}.{fun.__name__} ' +
-                        f'[sleeping for {sleep_current}s]: ' +
+                        f'[{repeated}/{retries}, sleeping for {sleep_current}s]: ' +
                         f'Error: {ex.__class__.__name__} - {ex}'
                     )
                     sleep(sleep_current)
+                    repeated += 1
                     continue
 
             raise RuntimeError(
