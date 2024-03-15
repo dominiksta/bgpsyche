@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use('Agg') # dont render an invisible tk window (which does not play
                       # well with multiprocessing)
 from matplotlib import pyplot as plt
+import editdistance
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.stage3_rank import classifier_rnn
 from bgpsyche.service.ext import routeviews
@@ -31,10 +32,12 @@ class _PathWithProb(t.TypedDict):
 class _RealLifeEvalModelWorkerResp(t.TypedDict):
     candidates: t.List[t.List[int]]
     path: t.List[int]
+    probs: t.List[float]
 
 def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
     candidates = _CANDIDATE_CACHE.get(path[0], path[-1])
-    return { 'candidates': candidates, 'path': path }
+    probs = _PREDICT_FUN(candidates)
+    return { 'candidates': candidates, 'path': path, 'probs': probs }
 
 
 def _load_test_paths() -> t.List[t.List[int]]:
@@ -62,6 +65,7 @@ def real_life_eval_model():
     real_paths = _load_test_paths()
     found_positions: t.List[float] = []
     candidate_lengths: t.List[int] = []
+    edit_distances: t.List[int] = []
     iter = 0
     prg_step = 10
 
@@ -78,8 +82,8 @@ def real_life_eval_model():
             iter += 1
 
             probs: t.List[_PathWithProb] = [
-                { 'path': w_resp['candidates'][i], 'prob': prob }
-                for i, prob in enumerate(_PREDICT_FUN(w_resp['candidates']))
+                { 'path': w_resp['candidates'][i], 'prob': w_resp['probs'][i] }
+                for i in range(len(w_resp['probs']))
             ]
             probs.sort(key=lambda el: el['prob'], reverse=True)
             candidates_probs = [ p['path'] for p in probs ]
@@ -95,10 +99,11 @@ def real_life_eval_model():
 
             candidate_lengths.append(candidates_length)
             found_positions.append(found_position)
+            edit_distances.extend([
+                editdistance.eval(path, can) for can in candidates_probs
+            ])
 
             if iter % prg_step == 0:
-                avg_found = round(mean(found_positions), 2)
-                avg_len = round(mean(candidate_lengths))
                 percent_correct = round(
                     (found_positions.count(0) / len(found_positions)) * 100
                 )
@@ -115,8 +120,8 @@ def real_life_eval_model():
                     f'C: {percent_correct} CR: {percent_correct_real} ' +
                     f'C3: {percent_top_3_real} | ' +
                     f'S: {percent_skipped} | ' +
-                    f'Pos: {found_positions[-1]}, Avg Pos: {avg_found} | ' +
-                    f'Len: {candidate_lengths[-1]}, Avg Len: {avg_len} | ' +
+                    f'Avg Pos: {mean(found_positions):.1f} | ' +
+                    f'Avg Len: {mean(candidate_lengths):.1f} | ' +
                     f'Top 10: {found_position < 10} | ' +
                     f'{w_resp["path"]}'
                 )
@@ -125,10 +130,16 @@ def real_life_eval_model():
                 classifier_rnn.tensorboard_writer.add_figure(
                     'eval_real/pos', plt.gcf(), iter
                 )
+
                 plt.ecdf(found_positions)
                 plt.xlim([0, 50])
                 classifier_rnn.tensorboard_writer.add_figure(
                     'eval_real/pos_cdf_begin', plt.gcf(), iter
+                )
+                plt.ecdf(found_positions)
+                plt.xlim([0, 100])
+                classifier_rnn.tensorboard_writer.add_figure(
+                    'eval_real/pos_cdf_begin_100', plt.gcf(), iter
                 )
                 plt.ecdf(found_positions)
                 plt.xlim([0, 800])
@@ -136,12 +147,33 @@ def real_life_eval_model():
                     'eval_real/pos_cdf_full', plt.gcf(), iter
                 )
 
+                found_in_first_n_percent = [
+                    round((found_positions[i] / candidate_lengths[i]) * 100)
+                    for i in range(len(found_positions))
+                ]
+
+                plt.ecdf(found_in_first_n_percent)
+                plt.xlim([0, 100])
+                classifier_rnn.tensorboard_writer.add_figure(
+                    'eval_real/pos_percent_cdf_100', plt.gcf(), iter
+                )
+
+                plt.ecdf(edit_distances)
+                plt.xlim([0, 10])
+                classifier_rnn.tensorboard_writer.add_figure(
+                    'eval_real/edit_distance_cdf', plt.gcf(), iter
+                )
+
+                # TODO: when an error happens, does it happen in the front,
+                # middle or end of the path?
+
                 for subtag, value in {
                         'percent_correct': percent_correct_real,
                         'percent_correct_top_3': percent_top_3_real,
                         'percent_correct_ignore_skipped': percent_correct,
                         'percent_skipped': percent_skipped,
                         'position': mean(found_positions),
+                        'in_first_percent': mean(found_in_first_n_percent),
                 }.items():
                     classifier_rnn.tensorboard_writer.add_scalar(
                         f'eval_real/{subtag}', value, iter

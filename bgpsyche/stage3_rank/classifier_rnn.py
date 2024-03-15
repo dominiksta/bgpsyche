@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter # type: ignore
 from torcheval.metrics.functional import binary_accuracy, binary_f1_score, binary_precision, binary_recall
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
-from bgpsyche.stage3_rank.nn_util import iter_batched
+from bgpsyche.stage3_rank.nn_util import EarlyStopping, iter_batched
 from bgpsyche.stage3_rank.vectorize_features import (
     AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES,
     vectorize_as_features, vectorize_link_features, vectorize_path_features
@@ -50,7 +50,7 @@ _RNN_AS_LEVEL_HIDDEN_SIZE = 64
 _RNN_LINK_LEVEL_NUM_LAYERS = 2
 _RNN_LINK_LEVEL_HIDDEN_SIZE = 64
 
-_PATH_MLP_OUT_SIZE = 64
+_PATH_LEVEL_OUT_SIZE = 8
 
 class _RNN(nn.Module):
     def __init__(
@@ -67,21 +67,23 @@ class _RNN(nn.Module):
             num_layers=_RNN_LINK_LEVEL_NUM_LAYERS, batch_first=True
         )
 
-        self.l1 = nn.Linear(_INPUT_SIZE_PATH, 16)
-        self.tanh1 = nn.Tanh()
-        self.l2 = nn.Linear(16, _PATH_MLP_OUT_SIZE)
-        self.tanh2 = nn.Tanh()
-
-        self.l_out1 = nn.Linear(
-            _RNN_AS_LEVEL_HIDDEN_SIZE
-            + _RNN_LINK_LEVEL_HIDDEN_SIZE
-            + _PATH_MLP_OUT_SIZE,
-            64
+        self.mlp_path_level = nn.Sequential(
+            nn.Linear(_INPUT_SIZE_PATH, _PATH_LEVEL_OUT_SIZE),
+            nn.Tanh(),
         )
-        self.tanh_out1 = nn.Tanh()
-        self.l_out2 = nn.Linear(64, 16)
-        self.tanh_out2 = nn.Tanh()
-        self.l_out3 = nn.Linear(16, 1)
+
+        self.mlp_out = nn.Sequential(
+            nn.Linear(
+                _RNN_AS_LEVEL_HIDDEN_SIZE
+                + _RNN_LINK_LEVEL_HIDDEN_SIZE
+                + _PATH_LEVEL_OUT_SIZE,
+                64
+            ),
+            nn.Tanh(),
+            nn.Linear(64, 16),
+            nn.Tanh(),
+            nn.Linear(16, 1),
+        )
 
     def forward(
             self,
@@ -105,18 +107,12 @@ class _RNN(nn.Module):
         out_rnn_link_level = \
             pad_packed_sequence(out_rnn_link_level, batch_first=True)[0][:, -1, :]
 
-        out_mlp = self.l1(x_path_level)
-        out_mlp = self.tanh1(out_mlp)
-        out_mlp = self.l2(out_mlp)
-        out_mlp = self.tanh2(out_mlp)
+        out_path_level = self.mlp_path_level(x_path_level)
 
-        out = self.l_out1(torch.concat((
-            out_rnn_as_level, out_rnn_link_level, out_mlp
+        out = self.mlp_out(torch.concat((
+            out_rnn_as_level, out_rnn_link_level, out_path_level
         ), dim=1))
-        out = self.tanh_out1(out)
-        out = self.l_out2(out)
-        out = self.tanh_out2(out)
-        out = self.l_out3(out)
+
         # sigmoid is implied by BCEWithLogitsLoss
 
         return out
@@ -127,21 +123,19 @@ _model_ready = False
 _model_file_path = DATA_DIR / 'models' / 'rnn.pt'
 
 _loss_fn = nn.BCEWithLogitsLoss()
-_epochs = 10
-_learning_rate = 0.001
+_max_epochs = 100
+_learning_rate = 0.01
 _optimizer = torch.optim.Adam(params=_model.parameters(), lr=_learning_rate)
 
 # Training & Evaluation
 # ======================================================================
-
-_BATCH_SIZE = 10
 
 def _train(
         X_path_level : t.List[t.List[t.Union[float, int]]],
         X_as_level   : t.List[t.List[t.List[t.Union[float, int]]]],
         X_link_level : t.List[t.List[t.List[t.Union[float, int]]]],
         y: t.List,
-        eval_fn: t.Callable[[int], t.Any],
+        eval_fn: t.Callable[[int, bool], '_EvalResult'],
 ):
     assert (
         len(y) == len(X_path_level) and
@@ -149,15 +143,20 @@ def _train(
         len(y) == len(X_link_level)
     )
 
+    _BATCH_SIZE = 10_000
+
     _model_file_path.parent.mkdir(exist_ok=True, parents=True)
     _LOG.info('Model not found on disk, initializing training')
 
     prg_i = 0
     prg_steps = ceil(1000 / _BATCH_SIZE)
+    eval_full_steps = 20
     prg_step_real = lambda: ceil((prg_i * _BATCH_SIZE) / 1000)
-    eval_steps = int(10_000 / _BATCH_SIZE)
-    prg = Progress(int(len(y) * _epochs / prg_steps / _BATCH_SIZE), 'train')
+    prg_max_epochs = Progress(_max_epochs, 'max_epochs')
     losses: t.List[float] = []
+    early_stopper = EarlyStopping(
+        min_delta=0.001, patience=5, restore_best_weights=False
+    )
 
     cancel = False
 
@@ -173,7 +172,9 @@ def _train(
     # ----------------------------------------------------------------------
 
     _model.train()
-    for epoch in range(_epochs):
+    for epoch in range(_max_epochs):
+        prg_epoch = Progress(int(len(y) / prg_steps / _BATCH_SIZE), f'epoch_{epoch}')
+
         iter_X_path_level = iter_batched(X_path_level, _BATCH_SIZE)
         iter_X_as_level   = iter_batched(X_as_level, _BATCH_SIZE)
         iter_X_link_level = iter_batched(X_link_level, _BATCH_SIZE)
@@ -208,26 +209,29 @@ def _train(
             if prg_i % prg_steps == 0:
                 tensorboard_writer.add_scalar(
                     'eval_synthetic_train/loss',
-                    mean(losses[-prg_steps:]),
-                    prg_step_real()
+                    mean(losses[-prg_steps:]), prg_step_real()
                 )
-                prg.update(f'E{epoch}: loss {mean(losses[-prg_steps:])}')
+                prg_epoch.update(f'loss {mean(losses[-prg_steps:])}')
 
-            if prg_i % eval_steps == 0: eval_fn(prg_step_real())
+            if prg_i % eval_full_steps == 0: eval_fn(prg_step_real(), False)
 
             if cancel: break
 
-        if cancel: break
+        losses_epoch = eval_fn(prg_step_real(), True)
+        tensorboard_writer.add_scalar(
+            'eval_synthetic_test/loss_epoch',
+            losses_epoch['loss_test'], prg_step_real()
+        )
 
-    tensorboard_writer.add_scalar(
-        'eval_synthetic_train/loss',
-        mean(losses[-prg_steps:]),
-        prg_step_real()
-    )
-    eval_fn(prg_step_real())
+        prg_max_epochs.update(f'{losses_epoch}')
+        prg_epoch.complete()
+
+        if cancel or early_stopper(_model, losses_epoch['loss_test']):
+            break
+
+    eval_fn(prg_step_real(), False)
 
     signal.signal(signal.SIGINT, sigint_orig_handler)
-    prg.complete()
 
     _LOG.info('Training Complete, saving model to disk...')
     torch.save(_model.state_dict(), _model_file_path)
@@ -235,21 +239,26 @@ def _train(
     _model_ready = True
 
 
+class _EvalResult(t.TypedDict):
+    loss_train: float
+    loss_test: float
+
 def _evaluate(
         prg_i: int,
+        only_test: bool,
         dataset_test: t.List[DatasetEl],
         dataset_train: t.List[DatasetEl],
         max_eval_paths_n = 5_000,
-):
+) -> _EvalResult:
     _LOG.info('Evaluating model...')
 
     def take(l):
-        copy = deepcopy(l)
+        copy = deepcopy(l[:max_eval_paths_n])
         random.shuffle(copy)
-        return copy[:max_eval_paths_n]
+        return copy
 
     dataset_test  = take(dataset_test)
-    dataset_train = take(dataset_train)
+    dataset_train = take(dataset_train) if not only_test else []
 
     X_path_level_test  = [ el['path_features'] for el in dataset_test ]
     X_as_level_test    = [ el['as_features'] for el in dataset_test ]
@@ -265,6 +274,8 @@ def _evaluate(
             torch.tensor(el, dtype=torch.float32) for el in l
         ], enforce_sorted=False).to(_device)
 
+    tens = lambda l: torch.tensor(l, dtype=torch.float32, device=_device)
+
     def show(name: str, probs: t.List[float], y: t.List) -> None:
         f1   = binary_f1_score (torch.tensor(probs), torch.tensor(y))
         acc  = binary_accuracy (torch.tensor(probs), torch.tensor(y))
@@ -277,34 +288,47 @@ def _evaluate(
         _LOG.info(f'Eval {name.upper()} F1={f1} ACC={acc} PREC={prec} REC={rec}')
 
     def itb(l: t.List) -> t.Iterator[t.List]:
-        return iter_batched(l, _BATCH_SIZE)
+        return iter_batched(l, 10_000)
 
     with torch.inference_mode():
         prob_test: t.List[float] = []
+        losses_test: t.List[float] = []
 
-        for X_path_level_batch, X_as_level_batch, X_link_level_batch in zip(
-                itb(X_path_level_test), itb(X_as_level_test), itb(X_link_level_test)
+        for X_path_level_batch, X_as_level_batch, X_link_level_batch, y_batch in zip(
+                itb(X_path_level_test), itb(X_as_level_test),
+                itb(X_link_level_test), itb(y_test)
         ):
             y_logits = _model(
                 pack(X_as_level_batch), pack(X_link_level_batch),
-                torch.tensor(X_path_level_batch, dtype=torch.float32, device=_device),
+                tens(X_path_level_batch),
             ).squeeze()
+            losses_test.append(_loss_fn(y_logits, tens(y_batch)).item())
             prob_test += [ float(n) for n in torch.sigmoid(y_logits) ]
 
         show('test', prob_test, y_test)
 
         prob_train: t.List[float] = []
+        losses_train: t.List[float] = []
 
-        for X_path_level_batch, X_as_level_batch, X_link_level_batch in zip(
-                itb(X_path_level_train), itb(X_as_level_train), itb(X_link_level_train)
-        ):
-            y_logits = _model(
-                pack(X_as_level_batch), pack(X_link_level_batch),
-                torch.tensor(X_path_level_batch, dtype=torch.float32, device=_device),
-            ).squeeze()
-            prob_train += [ float(n) for n in torch.sigmoid(y_logits) ]
+        if not only_test:
 
-        show('train', prob_train, y_train)
+            for X_path_level_batch, X_as_level_batch, X_link_level_batch, y_batch in zip(
+                    itb(X_path_level_train), itb(X_as_level_train),
+                    itb(X_link_level_train), itb(y_test)
+            ):
+                y_logits = _model(
+                    pack(X_as_level_batch), pack(X_link_level_batch),
+                    tens(X_path_level_batch),
+                ).squeeze()
+                losses_train.append(_loss_fn(y_logits, tens(y_batch)).item())
+                prob_train += [ float(n) for n in torch.sigmoid(y_logits) ]
+
+            show('train', prob_train, y_train)
+
+    return {
+        'loss_test': mean(losses_test),
+        'loss_train': mean(losses_train) if len(losses_train) != 0 else 0,
+    }
 
 
 _cpu_model = _RNN().to('cpu')
@@ -316,35 +340,43 @@ def predict_probs(
     global _model_ready, _device
     if not _model_ready:
         if not _model_file_path.exists() or retrain: ready_model()
+        _LOG.info('loading model from disk')
         _cpu_model.load_state_dict(torch.load(_model_file_path, map_location='cpu'))
         _device = 'cpu'
         _model_ready = True
         _cpu_model.eval()
 
-    X_as_level = pack_sequence([
-        torch.tensor(
-            [ vectorize_as_features(enrich_asn(asn)) for asn in path ],
-            dtype=torch.float32
-        )
-        for path in paths
-    ], enforce_sorted=False)
-    X_link_level = pack_sequence([
-        torch.tensor(
-            [ vectorize_link_features(enrich_link(source, sink))
-              for source, sink in pairwise(path) ],
-            dtype=torch.float32
-        )
-        for path in paths
-    ], enforce_sorted=False)
-    X_path_level = torch.tensor(
-        [ vectorize_path_features(enrich_path(path)) for path in paths ],
-        dtype=torch.float32
-    )
+    # note: feature enrichment will take a lot longer then prediction when a lot
+    # of paths are provided as input
 
-    with torch.inference_mode():
-        y_logits = _cpu_model(X_as_level, X_link_level, X_path_level)
+    tens = lambda l: torch.tensor(l, dtype=torch.float32, device='cpu')
+    out: t.List[float] = []
 
-    return [ float(el) for el in torch.sigmoid(y_logits) ]
+    # for *some reason*, we cannot first get all features for all paths and then
+    # pack them into one set of tensors. pytorch just gets completely stuck
+    # then. i even attempted implementing my own pack_sequence, only to discover
+    # that the simple act of calling torch.tensor() on a 3-dimensional list of
+    # shape ~ 8*1000*10 will cause the bug. this may have to do something with
+    # multiprocessing, maybe not. it does not even use any cpu, it just sits
+    # there idle waiting for better days to come.
+
+    for path in paths:
+        X_as_level = pack_sequence(
+            [tens([ vectorize_as_features(enrich_asn(asn)) for asn in path ])]
+        )
+        X_link_level = pack_sequence(
+            [tens([ vectorize_link_features(enrich_link(source, sink))
+                          for source, sink in pairwise(path) ])]
+        )
+        X_path_level = tens([
+            vectorize_path_features(enrich_path(path))
+        ])
+
+        with torch.inference_mode():
+            y_logits = _cpu_model(X_as_level, X_link_level, X_path_level)
+            out.append(float(torch.sigmoid(y_logits)))
+
+    return out
 
 
 def ready_model():
@@ -375,8 +407,7 @@ Training:
 ----------------------------------------------------------------------
 
 Dataset Size  = {len(dataset):_}
-Epochs        = {_epochs}
-Batch Size    = {_BATCH_SIZE}
+Epochs        = {_max_epochs}
 Learning Rate = {_learning_rate}
 
 Network Definition:
@@ -386,14 +417,13 @@ _RNN_AS_LEVEL_NUM_LAYERS    = {_RNN_AS_LEVEL_NUM_LAYERS}
 _RNN_AS_LEVEL_HIDDEN_SIZE   = {_RNN_AS_LEVEL_HIDDEN_SIZE}
 _RNN_LINK_LEVEL_NUM_LAYERS  = {_RNN_LINK_LEVEL_NUM_LAYERS}
 _RNN_LINK_LEVEL_HIDDEN_SIZE = {_RNN_LINK_LEVEL_HIDDEN_SIZE}
-_PATH_MLP_OUT_SIZE          = {_PATH_MLP_OUT_SIZE}
 ```
 """)
 
     tensorboard_writer.flush()
 
-    def _evaluate_on_test(prg_i: int):
-        _evaluate(prg_i, dataset_test, dataset_train)
+    def _evaluate_on_test(prg_i: int, only_test: bool):
+        return _evaluate(prg_i, only_test, dataset_test, dataset_train)
 
     _train(
         X_path_level_train,
