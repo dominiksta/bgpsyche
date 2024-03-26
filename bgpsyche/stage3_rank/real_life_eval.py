@@ -11,10 +11,11 @@ matplotlib.use('Agg') # dont render an invisible tk window (which does not play
 from matplotlib import pyplot as plt
 import editdistance
 from bgpsyche.caching.pickle import PickleFileCache
-from bgpsyche.stage3_rank import classifier_rnn, classifier
+from bgpsyche.stage3_rank import classifier_rnn, classifier, classifier_nn
 from bgpsyche.service.ext import routeviews
 from bgpsyche.stage3_rank.path_candidate_cache import PathCandidateCache
 from bgpsyche.util.multiprocessing import worker_amount
+from bgpsyche.stage3_rank.tensorboard import tensorboard_writer as tsw
 
 _LOG = logging.getLogger(__name__)
 
@@ -25,13 +26,14 @@ _CANDIDATE_CACHE = PathCandidateCache('real')
 
 _PredictFun = t.Callable[[t.List[t.List[int]]], t.List[float]]
 
-def _predict_fun_shortest(paths: t.List[t.List[int]]) -> t.List[float]:
-    s = sorted(paths, key=len)
-    l = len(s)
-    return [ 1 - s.index(path) / l for path in paths ]
+# def _predict_fun_shortest(paths: t.List[t.List[int]]) -> t.List[float]:
+#     s = sorted(paths, key=len)
+#     l = len(s)
+#     return [ 1 - s.index(path) / l for path in paths ]
 
-_PREDICT_FUN: _PredictFun = classifier_rnn.predict_probs
 # _PREDICT_FUN: _PredictFun = _predict_fun_shortest
+# _PREDICT_FUN: _PredictFun = classifier_rnn.predict_probs
+_PREDICT_FUN: _PredictFun = classifier_nn.make_prediction_function()
 # _PREDICT_FUN: _PredictFun = classifier.predict_probs
 
 _CANDIDATES_USE_FIRST_N = 20
@@ -54,14 +56,12 @@ def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerR
 
 
 def _load_test_paths() -> t.List[t.List[int]]:
-    dt = datetime.fromisoformat('2023-05-01T00:00')
-
     def _load():
         paths = [
             meta['path'] for meta in
             # mrt_custom.iter_paths('mrt_dtag', eliminate_path_prepending=True,)
             routeviews.iter_paths(
-                datetime.fromisoformat('2023-05-02T00:00'),
+                datetime.fromisoformat('2023-05-01T00:00'),
                 eliminate_path_prepending=True,
                 # collectors=['decix.jhb'],
             )
@@ -140,25 +140,17 @@ def real_life_eval_model():
                 )
 
                 plt.hist(found_positions, bins=100, range=(0, 500))
-                classifier_rnn.tensorboard_writer.add_figure(
-                    'eval_real/pos', plt.gcf(), iter
-                )
+                tsw.add_figure('eval_real/pos', plt.gcf(), iter)
 
                 plt.ecdf(found_positions)
                 plt.xlim([0, 50])
-                classifier_rnn.tensorboard_writer.add_figure(
-                    'eval_real/pos_cdf_begin', plt.gcf(), iter
-                )
+                tsw.add_figure('eval_real/pos_cdf_begin', plt.gcf(), iter)
                 plt.ecdf(found_positions)
                 plt.xlim([0, 100])
-                classifier_rnn.tensorboard_writer.add_figure(
-                    'eval_real/pos_cdf_begin_100', plt.gcf(), iter
-                )
+                tsw.add_figure('eval_real/pos_cdf_begin_100', plt.gcf(), iter)
                 plt.ecdf(found_positions)
                 plt.xlim([0, 800])
-                classifier_rnn.tensorboard_writer.add_figure(
-                    'eval_real/pos_cdf_full', plt.gcf(), iter
-                )
+                tsw.add_figure('eval_real/pos_cdf_full', plt.gcf(), iter)
 
                 found_in_first_n_percent = [
                     round((found_positions[i] / candidate_lengths[i]) * 100)
@@ -167,20 +159,14 @@ def real_life_eval_model():
 
                 plt.ecdf(found_in_first_n_percent)
                 plt.xlim([0, 100])
-                classifier_rnn.tensorboard_writer.add_figure(
-                    'eval_real/pos_percent_cdf_100', plt.gcf(), iter
-                )
+                tsw.add_figure('eval_real/pos_percent_cdf_100', plt.gcf(), iter)
 
                 plt.ecdf(edit_distances)
                 plt.xlim([0, 10])
-                classifier_rnn.tensorboard_writer.add_figure(
-                    'eval_real/edit_distance_cdf', plt.gcf(), iter
-                )
+                tsw.add_figure('eval_real/edit_distance_cdf', plt.gcf(), iter)
                 plt.ecdf(len_diff)
                 plt.xlim([0, 10])
-                classifier_rnn.tensorboard_writer.add_figure(
-                    'eval_real/len_diff', plt.gcf(), iter
-                )
+                tsw.add_figure('eval_real/len_diff', plt.gcf(), iter)
 
                 # TODO: when an error happens, does it happen in the front,
                 # middle or end of the path?
@@ -193,9 +179,7 @@ def real_life_eval_model():
                         'position': mean(found_positions),
                         'in_first_percent': mean(found_in_first_n_percent),
                 }.items():
-                    classifier_rnn.tensorboard_writer.add_scalar(
-                        f'eval_real/{subtag}', value, iter
-                    )
+                    tsw.add_scalar(f'eval_real/{subtag}', value, iter)
 
 
 def _main():

@@ -132,6 +132,10 @@ class DatasetEl(t.TypedDict):
 
 @run_in_pypy(cache=JSONFileCache)
 def make_dataset(
+        # NOTE: make sure to manually adjust the loss function to account for
+        # the ratio of fake/real paths! if candidates_per_real_path = 5, then
+        # pos_weight in BCEWithLogitsLoss should be tensor([5]) for example
+        # example
         candidates_per_real_path = 5,
         real_paths_n = 100_000,
         routeviews_dts: t.List[str] = [

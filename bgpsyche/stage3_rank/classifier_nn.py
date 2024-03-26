@@ -1,3 +1,4 @@
+from itertools import pairwise
 import typing as t
 import logging
 import random
@@ -9,31 +10,44 @@ from torch.nn.utils.rnn import pad_sequence
 from torcheval.metrics.functional import (
     binary_accuracy, binary_recall, binary_precision, binary_f1_score
 )
-from bgpsyche.stage3_rank.make_dataset import make_dataset
 from bgpsyche.util.cancel_iter import cancel_iter
-from .classifier_rnn import tensorboard_writer
+from bgpsyche.util.const import DATA_DIR
+from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
+from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link
+from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
+from bgpsyche.stage3_rank.vectorize_features import (
+    AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES, vectorize_as_features, vectorize_link_features
+)
+from bgpsyche.stage3_rank.tensorboard import tensorboard_writer
 
 _LOG = logging.getLogger(__name__)
 
 _RANDOM_SEED = 1337
 torch.manual_seed(_RANDOM_SEED)
 if torch.cuda.is_available: torch.cuda.manual_seed(_RANDOM_SEED)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# device = 'cpu'
+_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# _device = 'cpu'
 
 _tsb = tensorboard_writer.add_scalar
-_tens = lambda l: torch.tensor(l, dtype=torch.float32, device=device)
+_tens = lambda l: torch.tensor(l, dtype=torch.float32, device=_device)
 
 
 # model definition
 # ----------------------------------------------------------------------
 
 class _Model(nn.Module):
-    def __init__(self) -> None:
+    def __init__(
+            self,
+            input_size_link_level: int,
+            input_size_as_level: int,
+    ) -> None:
         super().__init__()
+        self._input_size_link_level = input_size_link_level
+        self._input_size_as_level = input_size_as_level
 
         self.rnn_as_level = nn.RNN(
-            input_size=10, hidden_size=8, num_layers=8,
+            input_size=self._input_size_as_level,
+            hidden_size=8, num_layers=8,
             batch_first=True,
             nonlinearity='tanh',
             # dropout?
@@ -41,7 +55,8 @@ class _Model(nn.Module):
         )
 
         self.rnn_link_level = nn.RNN(
-            input_size=4, hidden_size=8, num_layers=8,
+            input_size=self._input_size_link_level,
+            hidden_size=8, num_layers=8,
             batch_first=True,
             nonlinearity='tanh',
             # dropout?
@@ -80,67 +95,77 @@ class _Model(nn.Module):
         return out
 
 
-_model = _Model().to(device)
-
-_loss_fn = nn.BCEWithLogitsLoss(
-    # reduction?
-    pos_weight=torch.tensor([5], device=device)
-)
-
-# alternative: try adam
-_optimizer = torch.optim.Adam(params=_model.parameters(), lr=0.001)
-
 _epochs = 100_000
 
-# training loop
-# ----------------------------------------------------------------------
 
-def train(
-        X_as_level: torch.Tensor,
-        X_link_level: torch.Tensor,
-        y: torch.Tensor
-):
+class _Dataset(t.TypedDict):
+    X_as_level   : torch.Tensor
+    X_link_level : torch.Tensor
+    y            : torch.Tensor
 
-    # Train/Test split
+
+def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
+
+    # model initialization
     # ----------------------------------------------------------------------
 
-    train_split = int(len(y) * 0.8)
+    model = _Model(
+        input_size_as_level   = len(dataset['X_as_level'][0][0]),
+        input_size_link_level = len(dataset['X_link_level'][0][0]),
+    ).to(_device)
 
-    X_as_level_train   = X_as_level[:train_split]
-    X_as_level_test    = X_as_level[train_split:]
-    X_link_level_train = X_link_level[:train_split]
-    X_link_level_test  = X_link_level[train_split:]
-    y_train            = y[:train_split]
-    y_test             = y[train_split:]
+    loss_fn = nn.BCEWithLogitsLoss(
+        # reduction?
+        # HACK: this should probably not be hard coded
+        pos_weight=torch.tensor([5], device=_device)
+    )
+
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=0.001)
 
 
-    for epoch in range(_epochs):
-        # Training
+    # train/test split
+    # ----------------------------------------------------------------------
+
+    train_split = int(len(dataset['y']) * 0.8)
+
+    X_as_level_train   = dataset['X_as_level'][:train_split]
+    X_as_level_test    = dataset['X_as_level'][train_split:]
+    X_link_level_train = dataset['X_link_level'][:train_split]
+    X_link_level_test  = dataset['X_link_level'][train_split:]
+    y_train            = dataset['y'][:train_split]
+    y_test             = dataset['y'][train_split:]
+
+
+    for epoch in cancel_iter(range(_epochs), name='model training'):
+
+        # training
         # ----------------------------------------------------------------------
-        _model.train()
+
+        model.train()
 
         # 1. Forward pass (model outputs raw logits)
         # print(X_train)
-        y_logits = _model(
+        y_logits = model(
             X_as_level_train, X_link_level_train
         ).squeeze() # squeeze to remove extra `1` dimensions
 
         # 2. Calculate loss
-        loss = _loss_fn(y_logits, y_train)  # using nn.BCEWithLogitsLoss works
+        loss = loss_fn(y_logits, y_train)  # using nn.BCEWithLogitsLoss works
                                             # with raw logits
 
-        _optimizer.zero_grad() # 3. Optimizer zero grad
+        optimizer.zero_grad() # 3. Optimizer zero grad
         loss.backward()        # 4. Loss backwards
-        _optimizer.step()      # 5. Optimizer step
+        optimizer.step()      # 5. Optimizer step
 
-        # Logging Progress
+        # logging & visualizing progress
         # ----------------------------------------------------------------------
-        if epoch % 5 == 0:
-            _model.eval()
-            with torch.inference_mode():
-                test_logits = _model(X_as_level_test, X_link_level_test).squeeze()
 
-            loss_test = _loss_fn(test_logits, y_test)
+        if epoch % 5 == 0:
+            model.eval()
+            with torch.inference_mode():
+                test_logits = model(X_as_level_test, X_link_level_test).squeeze()
+
+            loss_test = loss_fn(test_logits, y_test)
             # prob_train=torch.sigmoid(y_logits)
             prob_test=torch.sigmoid(test_logits)
             # f1_train = binary_f1_score(prob_train, y_train)
@@ -168,39 +193,22 @@ def train(
             _LOG.info(f'Training Epoch: {epoch} | Loss: {loss:.5f}')
             _tsb('eval_synthetic_train/loss', loss, epoch)
 
+    return model.state_dict()
 
-def _test():
+
+def _load_dataset() -> _Dataset:
 
     dataset = make_dataset()
-    _LOG.info('Got Dataset')
+    _LOG.info('Dataset construction finished, now loading as tensors...')
 
     random.shuffle(dataset)
 
+    for el in tqdm(dataset, 'Applying runtime dataset transforms'):
+        for transform in _DATASET_RUNTIME_INPUT_TRANSFORMERS: transform(el)
+
     X_as_level = pad_sequence(
         [
-            _tens(
-                [
-                    [
-                        # *ft_vec,
-                        # ft_vec[0], # as_rank_cone
-                        # ft_vec[1], # rirstat_born
-                        # ft_vec[2], # rirstat_addr_count_v4
-                        # ft_vec[3], # rirstat_addr_count_v6
-                        ft_vec[4],  # 'category_unknown',
-                        ft_vec[5],  # 'category_transit_access',
-                        ft_vec[6],  # 'category_content',
-                        ft_vec[7],  # 'category_enterprise',
-                        ft_vec[8],  # 'category_educational_research',
-                        ft_vec[9],  # 'category_non_profit',
-                        ft_vec[10], # 'category_route_server',
-                        ft_vec[11], # 'category_network_services',
-                        ft_vec[12], # 'category_route_collector',
-                        ft_vec[13], # 'category_government',
-                        # 0,
-                    ]
-                    for ft_vec in el['as_features']
-                ],
-            )
+            _tens(el['as_features'])
             for el in cancel_iter(tqdm(dataset, 'make X_as_level tensor (can cancel)'))
         ],
         batch_first=True
@@ -208,19 +216,7 @@ def _test():
 
     X_link_level = pad_sequence(
         [
-            _tens(
-                [
-                    [
-                        # *ft_vec,
-                        ft_vec[0], # rel_p2c
-                        ft_vec[1], # rel_p2p
-                        ft_vec[2], # rel_c2p
-                        ft_vec[3], # rel_unknown
-                        # 0,
-                    ]
-                    for ft_vec in el['link_features']
-                ],
-            )
+            _tens(el['link_features'])
             for el in tqdm(dataset[:len(X_as_level)], 'make X_link_level tensor')
         ],
         batch_first=True
@@ -230,10 +226,138 @@ def _test():
         int(p['real'])
         for p in tqdm(dataset[:len(X_as_level)], 'make y tensor')
     ])
-    _LOG.info('Got training data set')
 
-    train(X_as_level, X_link_level, y)
-
+    return { 'X_as_level': X_as_level, 'X_link_level': X_link_level, 'y': y }
 
 
-if __name__ == '__main__': _test()
+# runtime dataset transformation (just for faster experimentation)
+# ----------------------------------------------------------------------
+
+class _DatasetElInput(t.TypedDict):
+    as_features   : t.List[t.List[t.Union[float, int]]]
+    link_features : t.List[t.List[t.Union[float, int]]]
+
+
+_DatasetRuntimeInputTransformer = t.Callable[[_DatasetElInput], None]
+
+
+def _dataset_transform_pick_features(el: _DatasetElInput):
+    el['as_features'] = [
+        [
+            # *ft_vec,
+            # ft_vec[0], # as_rank_cone
+            # ft_vec[1], # rirstat_born
+            # ft_vec[2], # rirstat_addr_count_v4
+            # ft_vec[3], # rirstat_addr_count_v6
+            ft_vec[4],  # 'category_unknown',
+            ft_vec[5],  # 'category_transit_access',
+            ft_vec[6],  # 'category_content',
+            ft_vec[7],  # 'category_enterprise',
+            ft_vec[8],  # 'category_educational_research',
+            ft_vec[9],  # 'category_non_profit',
+            ft_vec[10], # 'category_route_server',
+            ft_vec[11], # 'category_network_services',
+            ft_vec[12], # 'category_route_collector',
+            ft_vec[13], # 'category_government',
+            # 0,
+        ] for ft_vec in el['as_features']
+    ]
+    el['link_features'] = [
+        [
+            # *ft_vec,
+            ft_vec[0], # rel_p2c
+            ft_vec[1], # rel_p2p
+            ft_vec[2], # rel_c2p
+            ft_vec[3], # rel_unknown
+            # 0,
+        ] for ft_vec in el['link_features']
+    ]
+
+
+_DATASET_RUNTIME_INPUT_TRANSFORMERS: t.List[_DatasetRuntimeInputTransformer] = [
+    _dataset_transform_pick_features
+]
+
+
+def _ready_model_default_train(
+        retrain = False,
+        device = 'cpu',
+) -> _Model:
+
+    file_path = DATA_DIR / 'models' / 'bgpsyche.pt'
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not file_path.exists():
+        _LOG.info('Model not found on disk')
+        retrain = True
+
+    if retrain:
+        _LOG.info('Initializing training')
+        dataset = _load_dataset()
+        state_dict = train(dataset)
+        _LOG.info('Saving model to disk')
+        torch.save(state_dict, file_path)
+
+    model = _Model(
+        input_size_as_level   = len(dataset['X_as_level'][0][0]),
+        input_size_link_level = len(dataset['X_link_level'][0][0]),
+    ).to(device)
+    model.load_state_dict(torch.load(file_path, map_location=device))
+
+    _LOG.info('Model is ready to make predictions')
+
+    return model
+
+
+def make_prediction_function():
+
+    model = _ready_model_default_train(retrain=True, device='cpu')
+    model.eval()
+    _tens = lambda l: torch.tensor(l, dtype=torch.float32, device='cpu')
+
+    def predict_probs(paths: t.List[t.List[int]]) -> t.List[float]:
+        out: t.List[float] = []
+
+        # for *some reason*, we cannot first get all features for all paths and then
+        # pack them into one set of tensors. pytorch just gets completely stuck
+        # then. i even attempted implementing my own pack_sequence, only to discover
+        # that the simple act of calling torch.tensor() on a 3-dimensional list of
+        # shape ~ 8*1000*10 will cause the bug. this may have to do something with
+        # multiprocessing, maybe not. it does not even use any cpu, it just sits
+        # there idle waiting for better days to come.
+
+        for path in paths:
+            input: _DatasetElInput = {
+                'as_features': [
+                    vectorize_as_features(enrich_asn(asn))
+                    for asn in path
+                ],
+                'link_features': [
+                    vectorize_link_features(enrich_link(source, sink))
+                    for source, sink in pairwise(path)
+                ],
+            }
+            for transform in _DATASET_RUNTIME_INPUT_TRANSFORMERS: transform(input)
+
+            X_as_level   = _tens([input['as_features']])
+            X_link_level = _tens([input['link_features']])
+
+            with torch.inference_mode():
+                y_logits = model(X_as_level, X_link_level)
+
+            out.append(float(torch.sigmoid(y_logits)))
+
+        return out
+
+    return predict_probs
+
+
+if __name__ == '__main__':
+
+    predict_probs = make_prediction_function()
+
+    candidates = get_path_candidates(3320, 8075)[:10] # dtag -> microsoft
+    probs = predict_probs(candidates)
+
+    for i in range(len(candidates)):
+        _LOG.info(f'Prob: {probs[i]}, Route: {candidates[i]}')
