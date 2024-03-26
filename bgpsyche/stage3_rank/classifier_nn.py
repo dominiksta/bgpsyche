@@ -13,10 +13,10 @@ from torcheval.metrics.functional import (
 from bgpsyche.util.cancel_iter import cancel_iter
 from bgpsyche.util.const import DATA_DIR
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
-from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link
+from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
 from bgpsyche.stage3_rank.vectorize_features import (
-    AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES, vectorize_as_features, vectorize_link_features
+    AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES, vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
 from bgpsyche.stage3_rank.tensorboard import tensorboard_writer
 
@@ -40,10 +40,12 @@ class _Model(nn.Module):
             self,
             input_size_link_level: int,
             input_size_as_level: int,
+            input_size_path_level: int,
     ) -> None:
         super().__init__()
         self._input_size_link_level = input_size_link_level
-        self._input_size_as_level = input_size_as_level
+        self._input_size_as_level   = input_size_as_level
+        self._input_size_path_level = input_size_path_level
 
         self.rnn_as_level = nn.RNN(
             input_size=self._input_size_as_level,
@@ -63,8 +65,13 @@ class _Model(nn.Module):
             # bidirectional?
         )
 
+        self.mlp_path_level = nn.Sequential(
+            nn.Linear(self._input_size_path_level, 8),
+            nn.ReLU(),
+        )
+
         self.mlp_out = nn.Sequential(
-            nn.Linear(8 + 8, 32),
+            nn.Linear(8 + 8 + 8, 32),
             nn.ReLU(),
             nn.Linear(32, 16),
             nn.ReLU(),
@@ -74,7 +81,12 @@ class _Model(nn.Module):
         )
 
 
-    def forward(self, X_as_level: torch.Tensor, X_link_level: torch.Tensor):
+    def forward(
+            self,
+            X_as_level: torch.Tensor,
+            X_link_level: torch.Tensor,
+            X_path_level: torch.Tensor,
+    ):
         # print(input.shape)
         # print(input[0])
         rnn_as_level_out, _ = self.rnn_as_level(X_as_level)
@@ -85,10 +97,14 @@ class _Model(nn.Module):
         rnn_link_level_out, _ = self.rnn_link_level(X_link_level)
         rnn_link_level_out = rnn_link_level_out[:, -1, :]
 
+        mlp_path_level_out = self.mlp_path_level(X_path_level)
+
         # print(rnn_out.shape)
         # print(rnn_out[0])
         out = self.mlp_out(
-            torch.concat([rnn_as_level_out, rnn_link_level_out], dim=1)
+            torch.concat([
+                rnn_as_level_out, rnn_link_level_out, mlp_path_level_out
+            ], dim=1)
         )
         # print(out.shape)
         # print(out[0])
@@ -101,6 +117,7 @@ _epochs = 100_000
 class _Dataset(t.TypedDict):
     X_as_level   : torch.Tensor
     X_link_level : torch.Tensor
+    X_path_level : torch.Tensor
     y            : torch.Tensor
 
 
@@ -112,6 +129,7 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
     model = _Model(
         input_size_as_level   = len(dataset['X_as_level'][0][0]),
         input_size_link_level = len(dataset['X_link_level'][0][0]),
+        input_size_path_level = len(dataset['X_path_level'][0]),
     ).to(_device)
 
     loss_fn = nn.BCEWithLogitsLoss(
@@ -132,6 +150,8 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
     X_as_level_test    = dataset['X_as_level'][train_split:]
     X_link_level_train = dataset['X_link_level'][:train_split]
     X_link_level_test  = dataset['X_link_level'][train_split:]
+    X_path_level_train = dataset['X_path_level'][:train_split]
+    X_path_level_test  = dataset['X_path_level'][train_split:]
     y_train            = dataset['y'][:train_split]
     y_test             = dataset['y'][train_split:]
 
@@ -146,7 +166,7 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
         # 1. Forward pass (model outputs raw logits)
         # print(X_train)
         y_logits = model(
-            X_as_level_train, X_link_level_train
+            X_as_level_train, X_link_level_train, X_path_level_train,
         ).squeeze() # squeeze to remove extra `1` dimensions
 
         # 2. Calculate loss
@@ -163,7 +183,9 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
         if epoch % 5 == 0:
             model.eval()
             with torch.inference_mode():
-                test_logits = model(X_as_level_test, X_link_level_test).squeeze()
+                test_logits = model(
+                    X_as_level_test, X_link_level_test, X_path_level_test
+                ).squeeze()
 
             loss_test = loss_fn(test_logits, y_test)
             # prob_train=torch.sigmoid(y_logits)
@@ -222,12 +244,24 @@ def _load_dataset() -> _Dataset:
         batch_first=True
     )
 
+    X_path_level = _tens(
+        [
+            el['path_features']
+            for el in tqdm(dataset[:len(X_as_level)], 'make X_path_level tensor')
+        ]
+    )
+
     y = _tens([
         int(p['real'])
         for p in tqdm(dataset[:len(X_as_level)], 'make y tensor')
     ])
 
-    return { 'X_as_level': X_as_level, 'X_link_level': X_link_level, 'y': y }
+    return {
+        'X_as_level': X_as_level,
+        'X_link_level': X_link_level,
+        'X_path_level': X_path_level,
+        'y': y
+    }
 
 
 # runtime dataset transformation (just for faster experimentation)
@@ -236,6 +270,7 @@ def _load_dataset() -> _Dataset:
 class _DatasetElInput(t.TypedDict):
     as_features   : t.List[t.List[t.Union[float, int]]]
     link_features : t.List[t.List[t.Union[float, int]]]
+    path_features : t.List[t.Union[float, int]]
 
 
 _DatasetRuntimeInputTransformer = t.Callable[[_DatasetElInput], None]
@@ -272,6 +307,10 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             # 0,
         ] for ft_vec in el['link_features']
     ]
+    el['path_features'] = [
+        el['path_features'][0], # length
+        # el['path_features'][1], # is_valley_free
+    ]
 
 
 _DATASET_RUNTIME_INPUT_TRANSFORMERS: t.List[_DatasetRuntimeInputTransformer] = [
@@ -301,6 +340,7 @@ def _ready_model_default_train(
     model = _Model(
         input_size_as_level   = len(dataset['X_as_level'][0][0]),
         input_size_link_level = len(dataset['X_link_level'][0][0]),
+        input_size_path_level = len(dataset['X_path_level'][0]),
     ).to(device)
     model.load_state_dict(torch.load(file_path, map_location=device))
 
@@ -336,14 +376,17 @@ def make_prediction_function():
                     vectorize_link_features(enrich_link(source, sink))
                     for source, sink in pairwise(path)
                 ],
+                'path_features': vectorize_path_features(enrich_path(path)),
+
             }
             for transform in _DATASET_RUNTIME_INPUT_TRANSFORMERS: transform(input)
 
             X_as_level   = _tens([input['as_features']])
             X_link_level = _tens([input['link_features']])
+            X_path_level = _tens([input['path_features']])
 
             with torch.inference_mode():
-                y_logits = model(X_as_level, X_link_level)
+                y_logits = model(X_as_level, X_link_level, X_path_level)
 
             out.append(float(torch.sigmoid(y_logits)))
 
