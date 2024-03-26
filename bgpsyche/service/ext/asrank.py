@@ -2,7 +2,7 @@ import bz2
 from datetime import date
 import logging
 import typing as t
-import functools
+from functools import lru_cache
 import logging
 
 from gql import gql as _gql
@@ -21,7 +21,7 @@ _LOG = logging.getLogger(__name__)
 gql.transport.requests.log.setLevel(logging.WARNING)
 
 def _req_asrank(query: str) -> t.Any:
-    @functools.lru_cache()
+    @lru_cache()
     def get_client():
         transport = gql.transport.requests.RequestsHTTPTransport(
             url='https://api.asrank.caida.org/v2/graphql'
@@ -35,7 +35,7 @@ class ASRank(t.TypedDict):
     sorted: t.List[int]
     by_asn: t.Dict[int, int]
 
-@functools.lru_cache()
+@lru_cache()
 def get_asrank_full() -> ASRank:
     out: ASRank = { 'by_asn': {}, 'sorted': [] }
     batch_size = 5_000
@@ -86,7 +86,7 @@ _CUSTOMER_CONE_DOWNLOAD_DIR = DATA_DIR / 'asrank_customer_cones'
 _CUSTOMER_CONE_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-@functools.lru_cache()
+@lru_cache()
 @bench_function
 def get_asrank_customer_cones_full(
         dt: date = date.fromisoformat('2023-05-01'),
@@ -109,6 +109,28 @@ def get_asrank_customer_cones_full(
 def get_asrank_customer_cones(
         asn: int,
         dt: date = date.fromisoformat('2023-05-01'),
-) -> t.Optional[t.Set[int]]:
+) -> t.Set[int]:
     cones = get_asrank_customer_cones_full(dt)
     return cones[asn] if asn in cones else set()
+
+
+@lru_cache()
+def get_asrank_customer_cone_sizes_full(
+        dt: date = date.fromisoformat('2023-05-01'),
+) -> t.Dict[int, int]:
+    cones = get_asrank_customer_cones_full(dt)
+    return { asn: len(cone) for asn, cone in cones.items() }
+
+
+def get_asrank_customer_cone_size(
+        asn: int,
+        dt: date = date.fromisoformat('2023-05-01'),
+) -> int:
+    cones = get_asrank_customer_cone_sizes_full(dt)
+    return cones[asn] if asn in cones else 0
+
+
+ASRANK_CUSTOMER_CONE_SIZE_RANGE: t.Tuple[int, int] = (
+    min(get_asrank_customer_cone_sizes_full().values()),
+    max(get_asrank_customer_cone_sizes_full().values()),
+)

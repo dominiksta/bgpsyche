@@ -10,14 +10,11 @@ import torch
 _T = t.TypeVar('_T')
 
 def iter_batched(
-        items: t.List[_T],
+        items: t.Iterable[_T],
         batch_size: int,
-        shuffle = False,
         stop_after: t.Union[t.Literal['inf'], int] = 'inf',
 ) -> t.Iterator[t.List[_T]]:
     # from https://docs.python.org/3/library/itertools.html#itertools.batched
-    items_local = deepcopy(items) if shuffle else items
-    if shuffle: random.shuffle(items_local)
     it = iter(items)
     i = 0
     while batch := tuple(islice(it, batch_size)):

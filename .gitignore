@@ -3,3 +3,4 @@ __pycache__
 /.venv-pypy
 /bgpsyche/data
 /bgpsyche/env.ini
+copy-to-server.sh

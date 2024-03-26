@@ -29,14 +29,14 @@ _WORKER_PROCESSES_AMNT = (cpu_count() or 3) - 3
 _WORKER_CHUNKSIZE = 10
 
 _CANDIDATE_CACHE = PathCandidateCache(
-    'make_dataset',
+    'make_dataset_less_candidates',
     abort_customer_cone_search=lambda: [
         { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
-        { 'func': abort_on_amount(200), 'desc': 'found 200' },
+        { 'func': abort_on_amount(10), 'desc': 'found 200' },
     ],
     abort_full_search=lambda: [
         { 'func': abort_on_timeout(0.7), 'desc': 'timeout .7s' },
-        { 'func': abort_on_amount(200), 'desc': 'found 200' },
+        { 'func': abort_on_amount(10), 'desc': 'found 200' },
     ],
     quiet=True,
 )
@@ -102,13 +102,16 @@ def _iter_path_with_alternatives(
             ):
                 iter += 1
                 resp, path = w_resp
-                np.random.shuffle(resp)
+                resp.sort(key=len)
+                # np.random.shuffle(resp)
                 out_candidates = []
                 for candidate in resp:
                     if candidate == path: continue
                     if len(out_candidates) >= candidates_per_real_path: break
                     out_candidates.append(candidate)
 
+                assert len(out_candidates) == 0 or \
+                    len(out_candidates[0]) <= len(out_candidates[-1])
                 yield path, out_candidates
 
                 if iter % prg_len == 0: prg.update()
@@ -129,8 +132,8 @@ class DatasetEl(t.TypedDict):
 
 @run_in_pypy(cache=JSONFileCache)
 def make_dataset(
-        candidates_per_real_path = 10,
-        real_paths_n = 10_000,
+        candidates_per_real_path = 5,
+        real_paths_n = 100_000,
         routeviews_dts: t.List[str] = [
             '2023-05-01T00:00',
         ],

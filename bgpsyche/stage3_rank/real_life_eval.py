@@ -11,19 +11,30 @@ matplotlib.use('Agg') # dont render an invisible tk window (which does not play
 from matplotlib import pyplot as plt
 import editdistance
 from bgpsyche.caching.pickle import PickleFileCache
-from bgpsyche.stage3_rank import classifier_rnn
+from bgpsyche.stage3_rank import classifier_rnn, classifier
 from bgpsyche.service.ext import routeviews
 from bgpsyche.stage3_rank.path_candidate_cache import PathCandidateCache
 from bgpsyche.util.multiprocessing import worker_amount
 
 _LOG = logging.getLogger(__name__)
 
-_PREDICT_FUN = classifier_rnn.predict_probs
-
 _WORKER_PROCESSES_AMNT = worker_amount(ram_per_worker_mb=500)
 _WORKER_CHUNKSIZE = 10
 
 _CANDIDATE_CACHE = PathCandidateCache('real')
+
+_PredictFun = t.Callable[[t.List[t.List[int]]], t.List[float]]
+
+def _predict_fun_shortest(paths: t.List[t.List[int]]) -> t.List[float]:
+    s = sorted(paths, key=len)
+    l = len(s)
+    return [ 1 - s.index(path) / l for path in paths ]
+
+_PREDICT_FUN: _PredictFun = classifier_rnn.predict_probs
+# _PREDICT_FUN: _PredictFun = _predict_fun_shortest
+# _PREDICT_FUN: _PredictFun = classifier.predict_probs
+
+_CANDIDATES_USE_FIRST_N = 20
 
 class _PathWithProb(t.TypedDict):
     path: t.List[int]
@@ -36,6 +47,8 @@ class _RealLifeEvalModelWorkerResp(t.TypedDict):
 
 def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
     candidates = _CANDIDATE_CACHE.get(path[0], path[-1])
+    candidates = sorted(candidates, key=len)[:_CANDIDATES_USE_FIRST_N]
+    assert len(candidates[0]) <= len(candidates[-1])
     probs = _PREDICT_FUN(candidates)
     return { 'candidates': candidates, 'path': path, 'probs': probs }
 
@@ -66,6 +79,7 @@ def real_life_eval_model():
     found_positions: t.List[float] = []
     candidate_lengths: t.List[int] = []
     edit_distances: t.List[int] = []
+    len_diff: t.List[int] = []
     iter = 0
     prg_step = 10
 
@@ -97,11 +111,10 @@ def real_life_eval_model():
 
             found_position = candidates_probs.index(path)
 
+            edit_distances.append(editdistance.eval(path, candidates_probs[0]))
+            len_diff.append(len(path) - len(candidates_probs[0]))
             candidate_lengths.append(candidates_length)
             found_positions.append(found_position)
-            edit_distances.extend([
-                editdistance.eval(path, can) for can in candidates_probs
-            ])
 
             if iter % prg_step == 0:
                 percent_correct = round(
@@ -162,6 +175,11 @@ def real_life_eval_model():
                 plt.xlim([0, 10])
                 classifier_rnn.tensorboard_writer.add_figure(
                     'eval_real/edit_distance_cdf', plt.gcf(), iter
+                )
+                plt.ecdf(len_diff)
+                plt.xlim([0, 10])
+                classifier_rnn.tensorboard_writer.add_figure(
+                    'eval_real/len_diff', plt.gcf(), iter
                 )
 
                 # TODO: when an error happens, does it happen in the front,

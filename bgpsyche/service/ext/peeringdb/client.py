@@ -9,6 +9,7 @@ from .types import Network
 from bgpsyche.util.const import DATA_DIR, ENV
 
 _PDB_DIR = DATA_DIR / 'peeringdb'
+_PDB_DIR.mkdir(parents=True, exist_ok=True)
 
 # adapted from default config when running `peeringdb config set -n`
 _PDB_CONFIG = {

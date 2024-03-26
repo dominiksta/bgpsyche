@@ -44,4 +44,4 @@ elif _args.action == 'test_stage2':
 
 
 elif _args.action == 'tensorboard':
-    system('tensorboard --load_fast=false --logdir=./bgpsyche/data/tensorboard/')
+    system('tensorboard --bind_all --load_fast=false --logdir=./bgpsyche/data/tensorboard/')

@@ -1,7 +1,8 @@
 from datetime import date, datetime
+from statistics import mean
 import typing as t
 
-from bgpsyche.service.ext.asrank import get_asrank
+from bgpsyche.service.ext.asrank import get_asrank_customer_cone_size
 from bgpsyche.service.ext.caida_asrel import get_caida_asrel
 from bgpsyche.service.ext.ripe_as_names_countries import get_ripe_as_country
 from bgpsyche.service.ext.rir_delegations import get_rir_asstats
@@ -24,7 +25,7 @@ def enrich_asn(asn: int) -> ASFeaturesRaw:
 
     ret: ASFeaturesRaw = {
         'country_democracy_index': democracy_index,
-        'as_rank': get_asrank(asn),
+        'as_rank_cone': get_asrank_customer_cone_size(asn),
         'as_category': get_as_category(asn),
         'rirstat_addr_count_v4': None,
         'rirstat_addr_count_v6': None,
