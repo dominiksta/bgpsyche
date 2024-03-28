@@ -12,7 +12,7 @@ import csv
 from bgpsyche.caching import PickleFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.util.const import DATA_DIR
-from bgpsyche.util.geo import COUNTRY_UNKNOWN, Alpha2WithLocation
+from bgpsyche.util.geo import ALPHA2_WITH_LOCATION, COUNTRY_UNKNOWN, Alpha2WithLocation
 
 _BASE_URL = 'https://ftp.ripe.net/pub/stats'
 
@@ -117,20 +117,32 @@ def _parse(iter: t.Iterator[str]) -> t.Iterator[_AssignmentLineRaw]:
     for line in csv.reader(_csv_iter(), delimiter='|'):
         try:
             cc = t.cast(
-                Alpha2WithLocation, COUNTRY_UNKNOWN if line[1] == '' else line[1]
+                Alpha2WithLocation,
+                COUNTRY_UNKNOWN if line[1] in ['', 'ZZ'] else line[1]
             )
             dt = None if (line[5] == '' or line[5] == '00000000') \
                 else datetime.strptime(line[5], '%Y%m%d').date()
-            yield {
+            if line[6] in {'available', 'reserved'}: continue
+            ret: _AssignmentLineRaw = {
                 'registry': t.cast(RIR, line[0]),
                 'cc': cc,
                 'type': t.cast(t.Literal['asn', 'ipv4', 'ipv6'], line[2]),
                 'start': line[3],
                 'value': int(line[4]),
                 'date': dt,
-                'status': t.cast(t.Literal['allocated', 'allocated'], line[6]),
+                'status': t.cast(t.Literal['allocated', 'assigned'], line[6]),
                 'id': (line[0] + '--' + line[7]) if len(line) >= 8 else None
             }
+            assert ret['registry'] in RIRS, ret
+            assert ret['cc'] in ALPHA2_WITH_LOCATION or ret['cc'] == COUNTRY_UNKNOWN, ret
+            assert ret['type'] in ['asn', 'ipv4', 'ipv6'], ret
+            assert ret['value'] > 0
+            assert ret['status'] in ['allocated', 'assigned'], ret
+            # while bgp did not exist then, there are actually some lines going
+            # back all the way to the nix epoch, likely because the dates were
+            # not recorded and so they use the epoch as a fallback (?)
+            assert ret['date'] is None or ret['date'] >= date(1970, 1, 1), ret
+            yield ret
         except:
             _LOG.error(f'Could not parse line: {line}')
             raise

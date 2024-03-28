@@ -280,10 +280,10 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
     el['as_features'] = [
         [
             # *ft_vec,
-            # ft_vec[0], # as_rank_cone
-            # ft_vec[1], # rirstat_born
-            # ft_vec[2], # rirstat_addr_count_v4
-            # ft_vec[3], # rirstat_addr_count_v6
+            ft_vec[0],  # as_rank_cone
+            ft_vec[1],  # rirstat_born
+            ft_vec[2],  # rirstat_addr_count_v4
+            ft_vec[3],  # rirstat_addr_count_v6
             ft_vec[4],  # 'category_unknown',
             ft_vec[5],  # 'category_transit_access',
             ft_vec[6],  # 'category_content',
@@ -294,6 +294,7 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             ft_vec[11], # 'category_network_services',
             ft_vec[12], # 'category_route_collector',
             ft_vec[13], # 'category_government',
+            ft_vec[14], # 'country_democracy_index',
             # 0,
         ] for ft_vec in el['as_features']
     ]
@@ -304,6 +305,7 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             ft_vec[1], # rel_p2p
             ft_vec[2], # rel_c2p
             ft_vec[3], # rel_unknown
+            ft_vec[4], # distance_km
             # 0,
         ] for ft_vec in el['link_features']
     ]

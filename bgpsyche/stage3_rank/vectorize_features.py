@@ -1,12 +1,12 @@
-from statistics import mean
+from datetime import datetime
 import typing as t
 from time import mktime
-from bgpsyche.service.ext.asrank import ASRANK_CUSTOMER_CONE_SIZE_RANGE
 
+from bgpsyche.service.ext.asrank import ASRANK_CUSTOMER_CONE_SIZE_RANGE
 from bgpsyche.stage2_enrich.as_category import AS_CATEGORY
 from bgpsyche.stage2_enrich.democracy_index import democracy_index_avg
 from bgpsyche.stage2_enrich.types import ASFeaturesRaw, LinkFeatures, PathFeatures
-from bgpsyche.stage3_rank.vectorize_util import one_hot
+from bgpsyche.stage3_rank.vectorize_util import one_hot, scale_zero_to_one_linear
 
 PATH_FEATURE_VECTOR_NAMES: t.List[str] = [
     'length',
@@ -15,9 +15,9 @@ PATH_FEATURE_VECTOR_NAMES: t.List[str] = [
 
 def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float]]:
     return [
-        features['length'],
-        0 if features['is_valley_free'] is None
-        else int(features['is_valley_free']),
+        scale_zero_to_one_linear(features['length'], val_min=0, val_max=10),
+
+        int(features['is_valley_free'] or False),
     ]
 
 LINK_FEATURE_VECTOR_NAMES: t.List[str] = [
@@ -25,22 +25,25 @@ LINK_FEATURE_VECTOR_NAMES: t.List[str] = [
     'rel_p2p',
     'rel_c2p',
     'rel_unknown',
-    # 'distance_km',
+    'distance_km',
     # 'trade_service_volume_million_usd',
 ]
 
+_one_hot_rels = one_hot(['p2p', 'c2p', 'p2c'], optional=True)
+
 def vectorize_link_features(features: LinkFeatures) -> t.List[t.Union[int, float]]:
     return [
-        int(features['rel'] == 'p2c'),
-        int(features['rel'] == 'p2p'),
-        int(features['rel'] == 'c2p'),
-        int(features['rel'] is None),
-        # features['distance_km'],
+        *_one_hot_rels(features['rel']),
+
+        scale_zero_to_one_linear(
+            features['distance_km'],
+            val_min=0, val_max=40_075, # earth circumference
+        ),
+
         # features['trade_service_volume_million_usd'],
     ]
 
 AS_FEATURE_VECTOR_NAMES: t.List[str] = [
-    # 'country_democracy_index',
     'as_rank_cone',
     'rirstat_born',
     'rirstat_addr_count_v4',
@@ -55,23 +58,41 @@ AS_FEATURE_VECTOR_NAMES: t.List[str] = [
     'category_network_services',
     'category_route_collector',
     'category_government',
+    'country_democracy_index',
 ]
 
 _one_hot_as_category = one_hot(list(AS_CATEGORY), optional=False)
 
 def vectorize_as_features(features: ASFeaturesRaw) -> t.List[t.Union[int, float]]:
-    as_rank_cone_scaled = (
-        0 if features['as_rank_cone'] is None else \
-        features['as_rank_cone'] /
-        (ASRANK_CUSTOMER_CONE_SIZE_RANGE[1] - ASRANK_CUSTOMER_CONE_SIZE_RANGE[0])
-    )
-
     return [
-        # features['country_democracy_index'] or democracy_index_avg(),
-        as_rank_cone_scaled,
-        mktime(features['rirstat_born'].timetuple())
-        if features['rirstat_born'] is not None else -1,
-        features['rirstat_addr_count_v4'] or -1,
-        features['rirstat_addr_count_v6'] or -1,
+        scale_zero_to_one_linear(
+            features['as_rank_cone'],
+            val_min=ASRANK_CUSTOMER_CONE_SIZE_RANGE[0],
+            val_max=ASRANK_CUSTOMER_CONE_SIZE_RANGE[1],
+        ),
+
+        scale_zero_to_one_linear(
+            mktime(features['rirstat_born'].timetuple())
+            if features['rirstat_born'] is not None else 0,
+            val_min=0, val_max=datetime.today().timestamp(),
+        ),
+
+        scale_zero_to_one_linear(
+            features['rirstat_addr_count_v4']
+            if features['rirstat_addr_count_v4'] is not None else 0,
+            val_min=0, val_max=32,
+        ),
+
+        scale_zero_to_one_linear(
+            features['rirstat_addr_count_v6']
+            if features['rirstat_addr_count_v6'] is not None else 0,
+            val_min=0, val_max=64,
+        ),
+
         *_one_hot_as_category(features['as_category']),
+
+        scale_zero_to_one_linear(
+            features['country_democracy_index'] or democracy_index_avg(),
+            val_min=0, val_max=10,
+        ),
     ]

@@ -415,7 +415,9 @@ def harvesine_distance_km(
     assert 0 <= a <= 1, a
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    return R * c
+    ret = R * c
+    assert ret >= 0 and ret < 41_000 # earth circumference
+    return ret
 
 
 def _compute_country_distances():

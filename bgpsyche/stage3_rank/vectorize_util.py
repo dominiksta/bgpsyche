@@ -15,3 +15,16 @@ def one_hot(
         return ret
 
     return _one_hot
+
+
+def scale_zero_to_one_linear(
+        val: t.Optional[float],
+        val_min: float, val_max: float,
+        allow_outlier = True,
+) -> float:
+    if val is None: return 0
+
+    if allow_outlier: val = min(val_max, max(val_min, val))
+    else: assert val >= val_min and val <= val_max
+
+    return (val - val_min) / (val_max - val_min)
