@@ -15,6 +15,7 @@ from bgpsyche.util.bgp.path_prepending \
 from bgpsyche.util.const import HERE
 from bgpsyche.util.ds import str_to_set
 from bgpsyche.util.net.typ import IPNetwork
+from bgpsyche.util.retry import retry
 
 _LOG = logging.getLogger(__name__)
 
@@ -91,6 +92,16 @@ def _prepare_sqlite_single(args):
 
     BUFFER_SIZE = 100_000
 
+    @retry()
+    def _insert(buf: t.List[t.Tuple[int, int, str, str]]):
+        with sqlite3.connect(sqlite_file, timeout=120) as tx:
+            tx.executemany(f"""
+                INSERT INTO {_TABLE_DATA}
+                (as_source, as_sink, as_path, prefix)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT DO UPDATE SET count=excluded.count+1
+            """, buf)
+
     buffer: t.List[t.Tuple[int, int, str, str]] = []
     for path, prefix in iter_mrt_file_paths(
             mrt_file,
@@ -99,22 +110,10 @@ def _prepare_sqlite_single(args):
         buffer.append((path[0], path[-1], path_str, str(prefix)))
         if len(buffer) % BUFFER_SIZE == 0:
             # _LOG.info(f'Inserting {BUFFER_SIZE} paths into table {table_name}')
-            with sqlite3.connect(sqlite_file, timeout=120) as tx:
-                tx.executemany(f"""
-                  INSERT INTO {_TABLE_DATA}
-                    (as_source, as_sink, as_path, prefix)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT DO UPDATE SET count=excluded.count+1
-                """, buffer)
+            _insert(buffer)
             buffer = []
 
-    with sqlite3.connect(sqlite_file, timeout=120) as tx:
-        tx.executemany(f"""
-          INSERT INTO {_TABLE_DATA}
-            (as_source, as_sink, as_path, prefix)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT DO UPDATE SET count=excluded.count+1
-        """, buffer)
+    _insert(buffer)
 
 
 def _prepare_sqlite(

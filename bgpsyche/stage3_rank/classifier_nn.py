@@ -51,7 +51,7 @@ class _Model(nn.Module):
             input_size=self._input_size_as_level,
             hidden_size=8, num_layers=8,
             batch_first=True,
-            nonlinearity='tanh',
+            # nonlinearity='tanh',
             # dropout?
             # bidirectional?
         )
@@ -60,7 +60,7 @@ class _Model(nn.Module):
             input_size=self._input_size_link_level,
             hidden_size=8, num_layers=8,
             batch_first=True,
-            nonlinearity='tanh',
+            # nonlinearity='tanh',
             # dropout?
             # bidirectional?
         )
@@ -310,8 +310,11 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
         ] for ft_vec in el['link_features']
     ]
     el['path_features'] = [
-        el['path_features'][0], # length
+        # el['path_features'][0], # length
         # el['path_features'][1], # is_valley_free
+        el['path_features'][2], # longest_real_snippet
+        el['path_features'][3], # per_dest_markov_confidence
+        # 0,
     ]
 
 
@@ -327,6 +330,7 @@ def _ready_model_default_train(
 
     file_path = DATA_DIR / 'models' / 'bgpsyche.pt'
     file_path.parent.mkdir(parents=True, exist_ok=True)
+    dataset = _load_dataset()
 
     if not file_path.exists():
         _LOG.info('Model not found on disk')
@@ -334,7 +338,6 @@ def _ready_model_default_train(
 
     if retrain:
         _LOG.info('Initializing training')
-        dataset = _load_dataset()
         state_dict = train(dataset)
         _LOG.info('Saving model to disk')
         torch.save(state_dict, file_path)
@@ -351,9 +354,9 @@ def _ready_model_default_train(
     return model
 
 
-def make_prediction_function():
+def make_prediction_function(retrain=True):
 
-    model = _ready_model_default_train(retrain=True, device='cpu')
+    model = _ready_model_default_train(retrain=retrain, device='cpu')
     model.eval()
     _tens = lambda l: torch.tensor(l, dtype=torch.float32, device='cpu')
 

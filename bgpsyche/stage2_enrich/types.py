@@ -17,7 +17,7 @@ class ASFeaturesRaw(t.TypedDict):
     country_democracy_index: t.Optional[float]
 
     # TODO: try replacing with our own customer cone computation from t1 mrt data
-    as_rank: int
+    as_rank_cone: int
     rirstat_born: t.Optional[date]
 
     as_category: ASCategory
@@ -39,3 +39,7 @@ class PathFeatures(t.TypedDict):
     # to see.
     length: int
     is_valley_free: t.Optional[bool]
+
+    longest_real_snippet: int
+
+    per_dest_markov_confidence: float

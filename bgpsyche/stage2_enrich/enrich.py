@@ -1,6 +1,8 @@
 from datetime import date, datetime
 from statistics import mean
 import typing as t
+from bgpsyche.service.bgp_markov_chain import get_as_path_confidence, markov_chain_from_ripe_ris
+from bgpsyche.service.bgp_path_snippet_length import longest_real_snippet
 
 from bgpsyche.service.ext.asrank import get_asrank_customer_cone_size
 from bgpsyche.service.ext.caida_asrel import get_caida_asrel
@@ -68,4 +70,9 @@ def enrich_path(path: t.List[int]) -> PathFeatures:
     return {
         'length': len(path),
         'is_valley_free': path_is_valley_free(get_caida_asrel(dt), path),
+        'longest_real_snippet': len(longest_real_snippet(path)),
+        'per_dest_markov_confidence': get_as_path_confidence(
+            path,
+            markov_chain_from_ripe_ris(dt)
+        )
     }

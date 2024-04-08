@@ -1,11 +1,14 @@
 from datetime import datetime
+from functools import lru_cache
 import logging
 import typing as t
 
 from bgpsyche.caching.pickle import PickleFileCache
+from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.mrt_file_parser import ASPathMeta
 from bgpsyche.service.ext import ripe_ris
 
+logging_setup()
 _LOG = logging.getLogger(__name__)
 
 _Src2Dst2Count = t.Dict[int, t.Dict[int, int]]
@@ -42,6 +45,10 @@ def get_as_path_confidence(
     - ... 0 encodes unsure or no opinion.
     - ...-1 encodes high certainty that the path is not correct.
     """
+    if as_path[-1] not in chains:
+        _LOG.warning(f'No chain for destination: {as_path}')
+        return 0
+
     chain = chains[as_path[-1]]
     confidence_path: t.List[float] = []
     confidence_path_str: str = ''
@@ -52,7 +59,7 @@ def get_as_path_confidence(
 
         if src not in chain or \
            dst not in chain[src]:
-            _LOG.warning(f'Missing in markov chain: {(src, dst)}')
+            _LOG.debug(f'Missing in markov chain: {(src, dst)}')
         else:
             counts_sum = sum(chain[src].values())
             prob = chain[src][dst] / counts_sum
@@ -67,7 +74,7 @@ def get_as_path_confidence(
         confidence_path_str += f'{src} -{confidence}- '
 
     confidence_path_str += f'{as_path[-1]}'
-    _LOG.info(confidence_path_str)
+    _LOG.debug(confidence_path_str)
 
     if len(confidence_path) == 0: return 0
     return sum(confidence_path)/len(confidence_path)
@@ -76,21 +83,23 @@ def get_as_path_confidence(
 # from bgp
 # ----------------------------------------------------------------------
 
+@lru_cache()
 def markov_chain_from_ripe_ris(
         dt: datetime
 ) -> BGPMarkovChainsPerDest:
-    return bgp_markov_chains_from_mrt_dumps(ripe_ris.iter_paths(dt))
+    cache = PickleFileCache(
+        f'bgp_markov_chain_ris_{dt.strftime("%Y%m%d.%H%M")}',
+        lambda: bgp_markov_chains_from_mrt_dumps(ripe_ris.iter_paths(
+            dt, eliminate_path_prepending=True
+        ))
+    )
+
+    # cache.invalidate()
+    return cache.get()
 
 
 def _test_ris(path: t.List[int]):
-    cache = PickleFileCache(
-        'bgp_markov_chain_ris_test',
-        lambda: markov_chain_from_ripe_ris(
-            datetime.fromisoformat('2023-05-01T00:00')
-        )
-    )
-    # cache.invalidate()
-    chain = cache.get()
+    chain = markov_chain_from_ripe_ris(datetime.fromisoformat('2023-05-01T00:00'))
 
     # print(pformat(chain[path[-1]][19151]))
     print(get_as_path_confidence(path, chain))

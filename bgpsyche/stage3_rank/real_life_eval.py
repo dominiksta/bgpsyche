@@ -1,4 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
+from copy import deepcopy
+from pprint import pprint
 from statistics import mean
 import random
 import typing as t
@@ -10,6 +12,9 @@ matplotlib.use('Agg') # dont render an invisible tk window (which does not play
                       # well with multiprocessing)
 from matplotlib import pyplot as plt
 import editdistance
+from bgpsyche.service.ext.caida_asrel import get_caida_asrel
+from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
+from bgpsyche.util.bgp.valley_free import path_is_valley_free
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.stage3_rank import classifier_rnn, classifier, classifier_nn
 from bgpsyche.service.ext import routeviews
@@ -24,19 +29,78 @@ _WORKER_CHUNKSIZE = 10
 
 _CANDIDATE_CACHE = PathCandidateCache('real')
 
-_PredictFun = t.Callable[[t.List[t.List[int]]], t.List[float]]
+_CANDIDATES_USE_FIRST_N = 1000
 
-# def _predict_fun_shortest(paths: t.List[t.List[int]]) -> t.List[float]:
+# choose prediction function
+# ----------------------------------------------------------------------
+
+_PredictFun = t.Callable[[t.List[t.List[int]]], t.Dict[str, float]]
+
+def _dist_from_ordered_list(
+        paths: t.List[t.List[int]],
+        sorted: t.List[t.List[int]],
+) -> t.Dict[str, float]:
+    l = len(paths)
+    return { str(path): 1 - sorted.index(path) / l for path in paths }
+
+
+_is_vf = lambda p: int(not path_is_valley_free(
+    get_caida_asrel(date.fromisoformat('2023-05-01')), p
+))
+
+# def _predict_fun_shortest(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
 #     s = sorted(paths, key=len)
-#     l = len(s)
-#     return [ 1 - s.index(path) / l for path in paths ]
-
+#     return _dist_from_ordered_list(paths, s)
 # _PREDICT_FUN: _PredictFun = _predict_fun_shortest
+
+# def _predict_fun_shuffle(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
+#     s = deepcopy(paths)
+#     random.shuffle(s)
+#     return _dist_from_ordered_list(paths, s)
+# _PREDICT_FUN: _PredictFun = _predict_fun_shuffle
+
+# def _predict_fun_shortest_vf(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
+#     s = sorted(paths, key=lambda p: (len(p), _is_vf(p)))
+#     return _dist_from_ordered_list(paths, s)
+# _PREDICT_FUN: _PredictFun = _predict_fun_shortest_vf
+
+# def _predict_fun_vf_shortest(paths: t.List[t.List[int]]) -> t.List[float]:
+#     is_vf = lambda p: int(not path_is_valley_free(
+#         get_caida_asrel(date.fromisoformat('2023-05-01')), p
+#     ))
+#     s = sorted(paths, key=lambda p: (is_vf(p), len(p)))
+#     return _dist_from_ordered_list(s)
+
+# _PREDICT_FUN: _PredictFun = _predict_fun_vf_shortest
+
+
+_nn_predict = classifier_nn.make_prediction_function(retrain=True)
+
+
+# def _predict_fun_shortest_sort_by_nn(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
+#     probs = _nn_predict(paths)
+#     path_probs = { str(path): prob for prob, path in zip(probs, paths) }
+
+#     s = sorted(paths, key=lambda p: (len(p), 1 - path_probs[str(p)]))
+#     return _dist_from_ordered_list(paths, s)
+
+# _PREDICT_FUN: _PredictFun = _predict_fun_shortest_sort_by_nn
+
+def _predict_fun_nn(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
+    probs = _nn_predict(paths)
+    path_probs = { str(path): prob for prob, path in zip(probs, paths) }
+
+    s = sorted(paths, key=lambda p: (1 - path_probs[str(p)], len(p)))
+    return _dist_from_ordered_list(paths, s)
+
+_PREDICT_FUN: _PredictFun = _predict_fun_nn
+
+
 # _PREDICT_FUN: _PredictFun = classifier_rnn.predict_probs
-_PREDICT_FUN: _PredictFun = classifier_nn.make_prediction_function()
+# _PREDICT_FUN: _PredictFun = classifier_nn.make_prediction_function()
 # _PREDICT_FUN: _PredictFun = classifier.predict_probs
 
-_CANDIDATES_USE_FIRST_N = 20
+# ----------------------------------------------------------------------
 
 class _PathWithProb(t.TypedDict):
     path: t.List[int]
@@ -45,14 +109,21 @@ class _PathWithProb(t.TypedDict):
 class _RealLifeEvalModelWorkerResp(t.TypedDict):
     candidates: t.List[t.List[int]]
     path: t.List[int]
-    probs: t.List[float]
+    probs: t.Dict[str, float]
 
 def _real_life_eval_model_worker(path: t.List[int]) -> _RealLifeEvalModelWorkerResp:
     candidates = _CANDIDATE_CACHE.get(path[0], path[-1])
+    random.shuffle(candidates)
+    # candidates = get_path_candidates(path[0], path[-1])
     candidates = sorted(candidates, key=len)[:_CANDIDATES_USE_FIRST_N]
-    assert len(candidates[0]) <= len(candidates[-1])
+    # assert len(candidates[0]) <= len(candidates[-1])
+    random.shuffle(candidates)
+    # candidates.sort(key=len)
     probs = _PREDICT_FUN(candidates)
-    return { 'candidates': candidates, 'path': path, 'probs': probs }
+    ret: _RealLifeEvalModelWorkerResp = \
+        { 'candidates': candidates, 'path': path, 'probs': probs }
+    # pprint(ret)
+    return ret
 
 
 def _load_test_paths() -> t.List[t.List[int]]:
@@ -94,20 +165,19 @@ def real_life_eval_model():
             chunksize=_WORKER_CHUNKSIZE
         ):
             iter += 1
+            path = w_resp['path']
 
-            probs: t.List[_PathWithProb] = [
-                { 'path': w_resp['candidates'][i], 'prob': w_resp['probs'][i] }
-                for i in range(len(w_resp['probs']))
-            ]
-            probs.sort(key=lambda el: el['prob'], reverse=True)
-            candidates_probs = [ p['path'] for p in probs ]
+            if path not in w_resp['candidates']:
+                skipped += 1
+                continue
+
+            candidates_probs = sorted(
+                w_resp['candidates'], key=lambda p: 1 - w_resp['probs'][str(p)]
+            )
+            # pprint(candidates_probs)
 
             path = w_resp['path']
             candidates_length = len(candidates_probs)
-
-            if path not in candidates_probs:
-                skipped += 1
-                continue
 
             found_position = candidates_probs.index(path)
 

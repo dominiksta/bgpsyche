@@ -1,5 +1,4 @@
 from copy import deepcopy
-from datetime import datetime
 import logging
 from itertools import pairwise
 from math import ceil
@@ -12,7 +11,6 @@ import random
 import torch
 from torch import nn
 from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence
-from torch.utils.tensorboard import SummaryWriter # type: ignore
 from torcheval.metrics.functional import binary_accuracy, binary_f1_score, binary_precision, binary_recall
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
@@ -21,6 +19,7 @@ from bgpsyche.stage3_rank.vectorize_features import (
     AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES,
     vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
+from bgpsyche.stage3_rank.tensorboard import tensorboard_writer
 from bgpsyche.util.benchmark import Progress
 from bgpsyche.util.const import DATA_DIR
 
@@ -30,12 +29,6 @@ _RANDOM_SEED = 1337
 torch.manual_seed(_RANDOM_SEED)
 if torch.cuda.is_available: torch.cuda.manual_seed(_RANDOM_SEED)
 _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-_tensorboard_dir = DATA_DIR / 'tensorboard'
-tensorboard_writer = SummaryWriter(
-    _tensorboard_dir /
-    f'{datetime.now().strftime("%m.%d_%H.%M.%S")}_{input("Name run: ")}'
-)
 
 # model definition
 # ----------------------------------------------------------------------
@@ -124,7 +117,7 @@ _model_file_path = DATA_DIR / 'models' / 'rnn.pt'
 
 _loss_fn = nn.BCEWithLogitsLoss()
 _max_epochs = 100
-_learning_rate = 0.01
+_learning_rate = 0.001
 _optimizer = torch.optim.Adam(params=_model.parameters(), lr=_learning_rate)
 
 # Training & Evaluation
@@ -143,19 +136,20 @@ def _train(
         len(y) == len(X_link_level)
     )
 
-    _BATCH_SIZE = 10_000
+    _BATCH_SIZE = 100
+    # _BATCH_SIZE = len(y)
 
     _model_file_path.parent.mkdir(exist_ok=True, parents=True)
     _LOG.info('Model not found on disk, initializing training')
 
     prg_i = 0
-    prg_steps = ceil(1000 / _BATCH_SIZE)
-    eval_full_steps = 20
+    prg_steps = 50
+    eval_full_steps = prg_steps * 100
     prg_step_real = lambda: ceil((prg_i * _BATCH_SIZE) / 1000)
     prg_max_epochs = Progress(_max_epochs, 'max_epochs')
     losses: t.List[float] = []
     early_stopper = EarlyStopping(
-        min_delta=0.001, patience=5, restore_best_weights=False
+        min_delta=0.001, patience=20, restore_best_weights=False
     )
 
     cancel = False
@@ -220,7 +214,7 @@ def _train(
         losses_epoch = eval_fn(prg_step_real(), True)
         tensorboard_writer.add_scalar(
             'eval_synthetic_test/loss_epoch',
-            losses_epoch['loss_test'], prg_step_real()
+            losses_epoch['loss_test'], epoch
         )
 
         prg_max_epochs.update(f'{losses_epoch}')
@@ -248,25 +242,19 @@ def _evaluate(
         only_test: bool,
         dataset_test: t.List[DatasetEl],
         dataset_train: t.List[DatasetEl],
-        max_eval_paths_n = 5_000,
 ) -> _EvalResult:
     _LOG.info('Evaluating model...')
 
-    def take(l):
-        copy = deepcopy(l[:max_eval_paths_n])
-        random.shuffle(copy)
-        return copy
+    dataset_test  = dataset_test
+    dataset_train = dataset_train if not only_test else []
 
-    dataset_test  = take(dataset_test)
-    dataset_train = take(dataset_train) if not only_test else []
-
-    X_path_level_test  = [ el['path_features'] for el in dataset_test ]
-    X_as_level_test    = [ el['as_features'] for el in dataset_test ]
-    X_link_level_test  = [ el['link_features'] for el in dataset_test ]
+    X_path_level_test  = ( el['path_features'] for el in dataset_test )
+    X_as_level_test    = ( el['as_features'] for el in dataset_test )
+    X_link_level_test  = ( el['link_features'] for el in dataset_test )
     y_test             = [ int(el['real']) for el in dataset_test ]
-    X_path_level_train = [ el['path_features'] for el in dataset_train ]
-    X_as_level_train   = [ el['as_features'] for el in dataset_train ]
-    X_link_level_train = [ el['link_features'] for el in dataset_train ]
+    X_path_level_train = ( el['path_features'] for el in dataset_train )
+    X_as_level_train   = ( el['as_features'] for el in dataset_train )
+    X_link_level_train = ( el['link_features'] for el in dataset_train )
     y_train            = [ int(el['real']) for el in dataset_train ]
 
     def pack(l: t.List):
@@ -287,7 +275,7 @@ def _evaluate(
         tensorboard_writer.add_scalar(f'eval_synthetic_{name}/recall', rec, prg_i)
         _LOG.info(f'Eval {name.upper()} F1={f1} ACC={acc} PREC={prec} REC={rec}')
 
-    def itb(l: t.List) -> t.Iterator[t.List]:
+    def itb(l: t.Iterable) -> t.Iterator[t.List]:
         return iter_batched(l, 10_000)
 
     with torch.inference_mode():
@@ -314,7 +302,7 @@ def _evaluate(
 
             for X_path_level_batch, X_as_level_batch, X_link_level_batch, y_batch in zip(
                     itb(X_path_level_train), itb(X_as_level_train),
-                    itb(X_link_level_train), itb(y_test)
+                    itb(X_link_level_train), itb(y_train)
             ):
                 y_logits = _model(
                     pack(X_as_level_batch), pack(X_link_level_batch),
@@ -384,6 +372,10 @@ def ready_model():
     dataset = make_dataset()
     _LOG.info(f'Got dataset with {len(dataset)} paths')
 
+    _LOG.info('Running runtime dataset transforms...')
+    for el in dataset:
+        for transform in _DATASET_RUNTIME_TRANSFORMERS: transform(el)
+
     _LOG.info('Preparing dataset...')
 
     random.shuffle(dataset)
@@ -432,3 +424,57 @@ _RNN_LINK_LEVEL_HIDDEN_SIZE = {_RNN_LINK_LEVEL_HIDDEN_SIZE}
         y_train,
         _evaluate_on_test
     )
+
+
+# runtime dataset transformation (just for faster experimentation)
+# ----------------------------------------------------------------------
+
+_DatasetRuntimeTransformer = t.Callable[[DatasetEl], None]
+
+def _dataset_transform_zero_out_features(el: DatasetEl):
+    kill_as_features = [
+        # 'as_rank_cone',
+        'rirstat_born',
+        'rirstat_addr_count_v4',
+        'rirstat_addr_count_v6',
+        'category_unknown',
+        'category_transit_access',
+        'category_content',
+        'category_enterprise',
+        'category_educational_research',
+        'category_non_profit',
+        'category_route_server',
+        'category_network_services',
+        'category_route_collector',
+        'category_government',
+    ]
+    kill_link_features = [
+        'rel_p2c',
+        'rel_p2p',
+        'rel_c2p',
+        'rel_unknown',
+        # 'distance_km',
+        # 'trade_service_volume_million_usd',
+    ]
+    kill_path_features = [
+        'length',
+        'is_valley_free',
+    ]
+
+    for ft in kill_as_features:
+        for asn in el['as_features']:
+            asn[AS_FEATURE_VECTOR_NAMES.index(ft)] = 0
+
+    for ft in kill_link_features:
+        for link in el['link_features']:
+            link[LINK_FEATURE_VECTOR_NAMES.index(ft)] = 0
+
+    for ft in kill_path_features:
+        el['path_features'][PATH_FEATURE_VECTOR_NAMES.index(ft)] = 0
+
+
+_DATASET_RUNTIME_TRANSFORMERS: t.List[_DatasetRuntimeTransformer] = [
+    _dataset_transform_zero_out_features
+]
+
+if __name__ == '__main__': ready_model()

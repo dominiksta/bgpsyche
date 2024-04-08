@@ -11,13 +11,23 @@ from bgpsyche.stage3_rank.vectorize_util import one_hot, scale_zero_to_one_linea
 PATH_FEATURE_VECTOR_NAMES: t.List[str] = [
     'length',
     'is_valley_free',
+    'longest_real_snippet',
+    'per_dest_markov_confidence',
 ]
 
 def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float]]:
+    assert -1 <= features['per_dest_markov_confidence'] <= 1
+
     return [
         scale_zero_to_one_linear(features['length'], val_min=0, val_max=10),
 
         int(features['is_valley_free'] or False),
+
+        scale_zero_to_one_linear(
+            features['longest_real_snippet'], val_min=0, val_max=10
+        ),
+
+        features['per_dest_markov_confidence'],
     ]
 
 LINK_FEATURE_VECTOR_NAMES: t.List[str] = [
