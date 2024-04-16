@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import functools
 import math
 import logging
@@ -30,7 +30,7 @@ def _iter_delegation_file(
 ) -> t.Iterator[str]:
     _TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-    if dt == 'latest': dt = date.today()
+    if dt == 'latest': dt = date.today() - timedelta(days=1)
 
     # URL/File format:
     #
@@ -106,7 +106,7 @@ def _parse(iter: t.Iterator[str]) -> t.Iterator[_AssignmentLineRaw]:
             if line.endswith('|summary\n'): continue
             if line.startswith('2'):
                 header = line
-                _LOG.info(f'Found header: {header}')
+                _LOG.info(f'Found header: {header[:-1]}')
                 version = header.split('|')[0]
                 if not version.startswith('2'):
                     ValueError(f'Invalid Format Version {version}')

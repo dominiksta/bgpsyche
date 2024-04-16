@@ -1,6 +1,7 @@
 import bz2
 from datetime import date
 import logging
+from pprint import pprint
 import typing as t
 from functools import lru_cache
 import logging
@@ -134,3 +135,30 @@ ASRANK_CUSTOMER_CONE_SIZE_RANGE: t.Tuple[int, int] = (
     min(get_asrank_customer_cone_sizes_full().values()),
     max(get_asrank_customer_cone_sizes_full().values()),
 )
+
+if __name__ == '__main__':
+    show = {
+        3356: 'Level3',
+        3257: 'GTT',
+        1239: 'Sprint',
+        3320: 'DTAG',
+        39063: 'Leitwert',
+        51402: 'COM-IN',
+        51378: 'Klinikum Ingolstadt',
+        16509: 'Amazon',
+        64199: 'TCPShield (DDOS Protection)',
+        13335: 'Cloudflare',
+        17374: 'Walmart',
+        32934: 'Meta (Zuckbook)',
+        8075: 'Micro$oft',
+        6695: 'DE-CIX Frankfurt Route Servers',
+    }
+
+    pprint({
+        asn: {
+            'name': show[asn],
+            'cone': get_asrank_customer_cone_size(asn),
+            'rank': get_asrank(asn)
+        }
+        for asn in show.keys()
+    })
