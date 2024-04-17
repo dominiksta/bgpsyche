@@ -1,4 +1,5 @@
 from datetime import datetime
+import math
 import typing as t
 from time import mktime
 
@@ -76,9 +77,9 @@ _one_hot_as_category = one_hot(list(AS_CATEGORY), optional=False)
 def vectorize_as_features(features: ASFeaturesRaw) -> t.List[t.Union[int, float]]:
     return [
         scale_zero_to_one_linear(
-            features['as_rank_cone'],
-            val_min=ASRANK_CUSTOMER_CONE_SIZE_RANGE[0],
-            val_max=ASRANK_CUSTOMER_CONE_SIZE_RANGE[1],
+            math.log(features['as_rank_cone'] or 1),
+            val_min=1,
+            val_max=math.log(ASRANK_CUSTOMER_CONE_SIZE_RANGE[1]),
         ),
 
         scale_zero_to_one_linear(
