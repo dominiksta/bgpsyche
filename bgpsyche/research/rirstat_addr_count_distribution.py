@@ -6,6 +6,7 @@ from datetime import datetime
 import logging
 
 from matplotlib import pyplot as plt
+from bgpsyche.service.ext import peeringdb
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.ext.rir_delegations import get_rir_asstats_all
@@ -49,22 +50,47 @@ def _plot_rirstat_addr_count_distribution(dt: datetime) -> None:
     counts_v4_means = dict(sorted(counts_v4_means.items()))
     counts_v6_means = dict(sorted(counts_v6_means.items()))
 
-    fig = plt.figure(figsize=(9, 4), layout="constrained")
-    axs = t.cast(t.Any, fig.subplots(1, 2))
-    fig.supxlabel('Distance from Destination AS')
-    fig.supylabel('$log_2(\\text{adress_count})$')
+    plt.figure('feature_rirstat_addr_count_dist_from_dest', figsize=(4, 3))
+    plt.xlabel('Distance from Destination AS')
+    plt.ylabel('$log_2(\\text{Address Count})$')
 
     # print(pformat(counts_v4_means))
-    axs[0].plot(list(counts_v4_means.keys()), list(counts_v4_means.values()))
-    axs[0].set_ylim([0, 35])
-    axs[0].set_title('IPv4')
-    axs[1].plot(list(counts_v6_means.keys()), list(counts_v6_means.values()))
-    axs[1].set_ylim([0, 35])
-    axs[1].set_title('IPv6')
+    plt.plot(
+        list(counts_v4_means.keys()), list(counts_v4_means.values()),
+        label='IPv4',
+    )
+    plt.xticks([i for i in range(16)])
+    plt.plot(
+        list(counts_v6_means.keys()), list(counts_v6_means.values()),
+        label='IPv6',
+    )
+    plt.legend()
 
+    plt.tight_layout()
     plt.show()
+
+def _plot_rirstat_addr_count_distribution_full():
+    rirstats = get_rir_asstats_all()
+    all_asns = set(get_rir_asstats_all().keys())
+
+    plt.figure('feature_rirstat_addr_count_dist', figsize=(4, 3))
+    plt.xlabel('$log_2(\\text{Address Count})$')
+    plt.ylabel('CDF')
+
+    plt.ecdf([
+        rirstats[asn]['addr_count_v4_log_2'] for asn in all_asns
+    ], label='IPv4')
+    plt.ecdf([
+        rirstats[asn]['addr_count_v6_log_2'] for asn in all_asns
+    ], label='IPv6')
+    plt.legend(loc='lower right')
+
+    plt.tight_layout()
+    plt.show()
+
 
 if __name__ == '__main__':
     dt = datetime.fromisoformat('2023-05-01T00:00')
 
     _plot_rirstat_addr_count_distribution(dt)
+    # _plot_rirstat_addr_count_distribution_full()

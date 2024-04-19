@@ -67,6 +67,7 @@ class Client():
             resource.NetworkContact,            # poc
         ])
 
+
     @staticmethod
     def get_network_by_asn(asn: int) -> t.Optional[Network]:
         resp = _pdb.all(resource.Network).filter(asn=asn)
@@ -77,6 +78,11 @@ class Client():
             if ret.info_type == '': ret.info_type = 'Not Disclosed'
 
         return ret
+
+
+    @staticmethod
+    def get_all_asns() -> t.Set[int]:
+        return { net.asn for net in _pdb.all(resource.Network) }
 
 
     class _RouteServer(t.TypedDict):
