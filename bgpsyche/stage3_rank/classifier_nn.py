@@ -11,12 +11,12 @@ from torcheval.metrics.functional import (
     binary_accuracy, binary_recall, binary_precision, binary_f1_score
 )
 from bgpsyche.util.cancel_iter import cancel_iter
-from bgpsyche.util.const import DATA_DIR
+from bgpsyche.util.const import DATA_DIR, HERE
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
 from bgpsyche.stage3_rank.vectorize_features import (
-    AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES, vectorize_as_features, vectorize_link_features, vectorize_path_features
+    vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
 from bgpsyche.stage3_rank.tensorboard import tensorboard_writer
 
@@ -111,7 +111,7 @@ class _Model(nn.Module):
         return out
 
 
-_epochs = 100_000
+_epochs = 25_000
 
 
 class _Dataset(t.TypedDict):
@@ -140,6 +140,19 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=0.001)
 
+    # add code to tensorboard for reference
+    # ----------------------------------------------------------------------
+
+    def tsb_add_code_file(name: str, file: str):
+        with open(f'{HERE}/{file}.py', 'r') as f:
+            tensorboard_writer.add_text(
+                f'```\ncode/{name}\n```', f.read()
+            )
+
+    tsb_add_code_file('classifier'   , 'stage3_rank/classifier_nn')
+    tsb_add_code_file('make_dataset' , 'stage3_rank/make_dataset')
+    tsb_add_code_file('vectorize'    , 'stage3_rank/vectorize_features')
+    tsb_add_code_file('enrich'       , 'stage2_enrich/enrich')
 
     # train/test split
     # ----------------------------------------------------------------------
