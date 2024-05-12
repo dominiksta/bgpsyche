@@ -18,8 +18,8 @@ def get_path_candidates_full_graph(
         abort_on: t.Callable[
             [], t.List[GetPathCandidatesAbortCondition]
         ] = lambda: [
-            { 'func': abort_on_timeout(5), 'desc': 'timeout 5s' },
-            { 'func': abort_on_amount(4000), 'desc': 'amount 4k' },
+            { 'func': abort_on_timeout(3), 'desc': 'timeout 5s' },
+            { 'func': abort_on_amount(800), 'desc': 'amount 4k' },
         ],
         quiet: bool = False,
         weight: t.Optional[WeightFunction] = None,

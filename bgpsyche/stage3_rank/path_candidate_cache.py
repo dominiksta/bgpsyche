@@ -18,11 +18,11 @@ class PathCandidateCache:
             self, name: str,
             abort_customer_cone_search: GetPathCandidatesAbortConditions = lambda: [
                 { 'func': abort_on_timeout(1), 'desc': 'timeout 1s' },
-                { 'func': abort_on_amount(4000), 'desc': 'amount 4k' },
+                { 'func': abort_on_amount(1000), 'desc': 'amount 4k' },
             ],
             abort_full_search: GetPathCandidatesAbortConditions = lambda: [
-                { 'func': abort_on_timeout(5), 'desc': 'timeout 5s' },
-                { 'func': abort_on_amount(4000), 'desc': 'amount 4k' },
+                { 'func': abort_on_timeout(3), 'desc': 'timeout 5s' },
+                { 'func': abort_on_amount(800), 'desc': 'amount 4k' },
             ],
             quiet=False,
     ) -> None:

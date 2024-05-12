@@ -14,11 +14,11 @@ def get_path_candidates(
         source: int, sink: int,
         abort_customer_cone_search: GetPathCandidatesAbortConditions = lambda: [
             { 'func': abort_on_timeout(1), 'desc': 'timeout 1s [cone]' },
-            { 'func': abort_on_amount(4000), 'desc': 'amount 4k [cone]' },
+            { 'func': abort_on_amount(1000), 'desc': 'amount 1k [cone]' },
         ],
         abort_full_search: GetPathCandidatesAbortConditions = lambda: [
-            { 'func': abort_on_timeout(5), 'desc': 'timeout 5s [full]' },
-            { 'func': abort_on_amount(4000), 'desc': 'amount 4k [full]' },
+            { 'func': abort_on_timeout(3), 'desc': 'timeout 3s [full]' },
+            { 'func': abort_on_amount(800), 'desc': 'amount 800 [full]' },
         ],
         quiet: bool = False,
 ) -> t.List[t.List[int]]:

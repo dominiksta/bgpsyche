@@ -146,7 +146,7 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
     def tsb_add_code_file(name: str, file: str):
         with open(f'{HERE}/{file}.py', 'r') as f:
             tensorboard_writer.add_text(
-                f'```\ncode/{name}\n```', f.read()
+                f'code/{name}', f'```\n{f.read()}\n```'
             )
 
     tsb_add_code_file('classifier'   , 'stage3_rank/classifier_nn')
@@ -323,7 +323,7 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
         ] for ft_vec in el['link_features']
     ]
     el['path_features'] = [
-        # el['path_features'][0], # length
+        el['path_features'][0], # length
         # el['path_features'][1], # is_valley_free
         el['path_features'][2], # longest_real_snippet
         el['path_features'][3], # per_dest_markov_confidence
