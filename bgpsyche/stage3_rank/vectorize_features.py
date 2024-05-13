@@ -85,7 +85,10 @@ def vectorize_as_features(features: ASFeaturesRaw) -> t.List[t.Union[int, float]
         scale_zero_to_one_linear(
             mktime(features['rirstat_born'].timetuple())
             if features['rirstat_born'] is not None else 0,
-            val_min=0, val_max=datetime.today().timestamp(),
+            val_min=0,
+            val_max=datetime.combine(
+                datetime.today(), datetime.min.time()
+            ).timestamp()
         ),
 
         scale_zero_to_one_linear(
