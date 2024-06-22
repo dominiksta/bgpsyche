@@ -111,7 +111,7 @@ class _Model(nn.Module):
         return out
 
 
-_epochs = 25_000
+_epochs = 5_000
 
 
 class _Dataset(t.TypedDict):
@@ -297,17 +297,18 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             ft_vec[1],  # rirstat_born
             ft_vec[2],  # rirstat_addr_count_v4
             ft_vec[3],  # rirstat_addr_count_v6
-            ft_vec[4],  # 'category_unknown',
-            ft_vec[5],  # 'category_transit_access',
-            ft_vec[6],  # 'category_content',
-            ft_vec[7],  # 'category_enterprise',
-            ft_vec[8],  # 'category_educational_research',
-            ft_vec[9],  # 'category_non_profit',
-            ft_vec[10], # 'category_route_server',
-            ft_vec[11], # 'category_network_services',
-            ft_vec[12], # 'category_route_collector',
-            ft_vec[13], # 'category_government',
-            ft_vec[14], # 'country_democracy_index',
+            # ft_vec[4],  # distance_from_path_beginning_km
+            ft_vec[5],  # category_unknown
+            ft_vec[6],  # category_transit_access
+            ft_vec[7],  # category_content
+            ft_vec[8],  # category_enterprise
+            ft_vec[9],  # category_educational_research
+            ft_vec[10], # category_non_profit
+            ft_vec[11], # category_route_server
+            ft_vec[12], # category_network_services
+            ft_vec[13], # category_route_collector
+            ft_vec[14], # category_government
+            # ft_vec[15], # country_democracy_index
             # 0,
         ] for ft_vec in el['as_features']
     ]
@@ -319,6 +320,8 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             ft_vec[2], # rel_c2p
             ft_vec[3], # rel_unknown
             ft_vec[4], # distance_km
+            # ft_vec[5], # trade_factor
+            # ft_vec[6], # confidence_from_seen_count
             # 0,
         ] for ft_vec in el['link_features']
     ]
@@ -387,7 +390,7 @@ def make_prediction_function(retrain=True):
         for path in paths:
             input: _DatasetElInput = {
                 'as_features': [
-                    vectorize_as_features(enrich_asn(asn))
+                    vectorize_as_features(enrich_asn(asn, path))
                     for asn in path
                 ],
                 'link_features': [

@@ -13,7 +13,7 @@ from bgpsyche.util.platform import get_func_module
 
 _T = t.TypeVar('_T')
 _CallableT = t.TypeVar('_CallableT', bound=t.Callable)
-_LOG = logging.getLogger(__name__)
+_LOG = logging.getLogger('caching')
 
 
 class Cacheable(t.Generic[_T], metaclass=ABCMeta):

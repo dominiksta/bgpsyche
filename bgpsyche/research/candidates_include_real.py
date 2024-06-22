@@ -52,7 +52,7 @@ _GET_CANDIDATES_ALL = lambda path: get_path_candidates(
 _GET_CANDIDATES_ALL_PROD = lambda path: get_path_candidates(
     path[0], path[-1],
     abort_customer_cone_search=_ABORT_COND('cone', path, 1),
-    abort_full_search=_ABORT_COND('full', path, 3),
+    abort_full_search=_ABORT_COND('full', path, 10),
     quiet=True,
 )
 
@@ -85,6 +85,13 @@ def _research_candidates_include_real_worker(args) -> t.Tuple[
 
 @run_in_pypy()
 def _research_candidates_include_real():
+    result_file = (
+        _RESULT_DIR / (
+            f'{datetime.now().strftime("%Y%m%d.%H%M")}-candidates-include-real' +
+            f'-{input("Name result file: ")}.json'
+        )
+    )
+
     ris_paths = _load_ris_paths()[:10_000]
 
     # HACK: initialize cache before workers all start populating cache
@@ -98,8 +105,6 @@ def _research_candidates_include_real():
         round(len(ris_paths) / _WORKER_CHUNKSIZE),
         'total'
     )
-
-    now = datetime.now()
 
     with multiprocessing.Pool(_WORKER_PROCESSES_AMNT) as p:
         for res in p.imap_unordered(
@@ -124,11 +129,7 @@ def _research_candidates_include_real():
                 avg_not_included_len = statistics.mean(not_included_len or [0])
                 prg.update(f'{included}/{iter} = {percent}%')
 
-                with open(
-                        _RESULT_DIR /
-                        f'{now.strftime("%Y%m%d.%H%M")}-candidates-include-real.json',
-                        'w', encoding='UTF-8'
-                ) as f:
+                with open(result_file, 'w', encoding='UTF-8') as f:
                     f.write(json.dumps({
                         'processed': iter,
                         'included': included,

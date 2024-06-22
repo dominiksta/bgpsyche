@@ -151,7 +151,7 @@ def make_dataset(
         return {
             'path_features': vectorize_path_features(enrich_path(path)),
             'as_features': [
-                vectorize_as_features(enrich_asn(asn)) for asn in path
+                vectorize_as_features(enrich_asn(asn, path)) for asn in path
             ],
             'link_features': [
                 vectorize_link_features(enrich_link(source, sink))

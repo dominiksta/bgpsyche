@@ -84,7 +84,7 @@ class _AssignmentLineRaw(t.TypedDict):
     registry: RIR
     cc: Alpha2WithLocation
     type: t.Literal['asn', 'ipv4', 'ipv6']
-    start: str # first an or ip address of block
+    start: str # first asn or ip address of block
     # for ipv4 and asn: number of addrs
     # for ipv6: cidr prefix length
     value: int
@@ -148,13 +148,30 @@ def _parse(iter: t.Iterator[str]) -> t.Iterator[_AssignmentLineRaw]:
             raise
 
 
+@functools.lru_cache()
+def get_all_asns(
+        dt: t.Union[t.Literal['latest'], date] = 'latest',
+        rirs: t.Set[RIR] = RIRS,
+) -> t.Set[int]:
+    ret: t.Set[int] = set()
+    for rir in rirs:
+        for assignment in _parse(_iter_delegation_file(rir, dt)):
+            if assignment['type'] != 'asn': continue
+            start = int(assignment['start'])
+            assert assignment['value'] > 0, assignment
+            for asn in range(start, start + assignment['value']):
+                ret.add(asn)
+
+    return ret
+
+
 class ASStatsSingle(t.TypedDict):
+    rir: RIR
     born: t.Optional[date]
     addr_count_v4_log_2: float
     addr_count_v6_log_2: float
 
 ASStats = t.Dict[int, ASStatsSingle]
-
 
 def _get_asstats(
         dt: t.Union[t.Literal['latest'], date], rirs: t.List[RIR],
@@ -162,32 +179,50 @@ def _get_asstats(
     ret: ASStats = {}
 
     class _ASStatsSingleTmp(t.TypedDict):
+        rir: t.Optional[RIR]
         asns: t.Set[t.Tuple[int, t.Optional[date]]]
         addr_count_v4: int
         addr_count_v6: int
 
     for rir in rirs:
         by_id: t.Dict[str, _ASStatsSingleTmp] = defaultdict(lambda: {
+            'rir': None,
             'asns': set(),
             'addr_count_v4': 0,
             'addr_count_v6': 0,
         })
         for assignment in _parse(_iter_delegation_file(rir, dt)):
             if assignment['id'] == None: continue
+
             el = by_id[assignment['id']]
+            el['rir'] = assignment['registry']
             if assignment['type'] == 'ipv4':
+                # if assignment['status'] != 'assigned': continue
+                assert assignment['value'] >= 8, assignment
                 el['addr_count_v4'] += assignment['value']
             elif assignment['type'] == 'ipv6':
+                # if assignment['status'] != 'assigned': continue
+                assert assignment['value'] >= 16, assignment
                 el['addr_count_v6'] += 2 ** assignment['value']
             elif assignment['type'] == 'asn':
-                el['asns'].add((int(assignment['start']), assignment['date']))
+                assert assignment['value'] >= 1, assignment
+                start = int(assignment['start'])
+                for asn in range(start, start + assignment['value']):
+                    el['asns'].add((asn, assignment['date']))
 
 
-        for tmp in by_id.values():
+
+        for id, tmp in by_id.items():
+            assert tmp['rir'] is not None
+            # if len(tmp['asns']) != 0 \
+            #    and tmp['addr_count_v4'] + tmp['addr_count_v6'] == 0:
+            #     _LOG.warning((id, tmp))
             for asn, born in tmp['asns']:
                 assert asn not in ret, \
                     f'ASes should not be delegated twice ({asn})'
+                assert tmp['addr_count_v4'] == 0 or tmp['addr_count_v4'] >= 32, tmp
                 ret[asn] = {
+                    'rir': tmp['rir'],
                     'born': born,
                     'addr_count_v4_log_2': (
                         math.log(tmp['addr_count_v4'], 2)

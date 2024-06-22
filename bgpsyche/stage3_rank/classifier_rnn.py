@@ -350,7 +350,7 @@ def predict_probs(
 
     for path in paths:
         X_as_level = pack_sequence(
-            [tens([ vectorize_as_features(enrich_asn(asn)) for asn in path ])]
+            [tens([ vectorize_as_features(enrich_asn(asn, path)) for asn in path ])]
         )
         X_link_level = pack_sequence(
             [tens([ vectorize_link_features(enrich_link(source, sink))
@@ -454,7 +454,7 @@ def _dataset_transform_zero_out_features(el: DatasetEl):
         'rel_c2p',
         'rel_unknown',
         # 'distance_km',
-        # 'trade_service_volume_million_usd',
+        # 'trade_factor',
     ]
     kill_path_features = [
         'length',

@@ -8,7 +8,8 @@ from bgpsyche.util.bgp.relationship import RelationshipKind
 class LinkFeatures(t.TypedDict):
     rel: t.Optional[RelationshipKind]
     distance_km: int
-    trade_service_volume_million_usd: float
+    trade_factor: float
+    confidence_from_seen_count: float # [-1;1]
 
 
 class ASFeaturesRaw(t.TypedDict):
@@ -21,6 +22,8 @@ class ASFeaturesRaw(t.TypedDict):
     rirstat_born: t.Optional[date]
 
     as_category: ASCategory
+
+    distance_from_path_beginning_km: float
 
     # - a smaller value could mean both that the AS is small or that is is a
     #   transit provider. content networks prob have larger prefixes because

@@ -10,21 +10,26 @@ from bgpsyche.service.ext import peeringdb
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.ext.rir_delegations import get_rir_asstats_all
-from bgpsyche.service.ext import routeviews
+from bgpsyche.service.ext import ripe_ris
+from bgpsyche.util.run_in_pypy import run_in_pypy
 
 logging_setup()
 _LOG = logging.getLogger(__name__)
 
-def _rirstat_addr_count_distribution(dt: datetime) -> t.Tuple[
+_DT = datetime.fromisoformat('2023-05-01T00:00')
+
+
+@run_in_pypy(cache=PickleFileCache)
+def _rirstat_addr_count_distribution() -> t.Tuple[
         t.Dict[int, float], t.Dict[int, float]
 ]:
-    rirstats = get_rir_asstats_all(dt)
+    rirstats = get_rir_asstats_all(_DT)
 
     counts_v4: t.Dict[int, t.List[float]] = defaultdict(list)
     counts_v6: t.Dict[int, t.List[float]] = defaultdict(list)
 
 
-    for path_meta in routeviews.iter_paths(dt, eliminate_path_prepending=True):
+    for path_meta in ripe_ris.iter_paths(_DT, eliminate_path_prepending=True):
         path = path_meta['path']
         path_len = len(path)
         for pos, asn in enumerate(path):
@@ -38,14 +43,9 @@ def _rirstat_addr_count_distribution(dt: datetime) -> t.Tuple[
 
     return counts_v4_means, counts_v6_means
 
-def _plot_rirstat_addr_count_distribution(dt: datetime) -> None:
+def _plot_rirstat_addr_count_distribution() -> None:
 
-    cache = PickleFileCache(
-        'research_rirstat_addr_count_distributions',
-        lambda: _rirstat_addr_count_distribution(dt),
-    )
-    # cache.invalidate()
-    counts_v4_means, counts_v6_means = cache.get()
+    counts_v4_means, counts_v6_means = _rirstat_addr_count_distribution()
 
     counts_v4_means = dict(sorted(counts_v4_means.items()))
     counts_v6_means = dict(sorted(counts_v6_means.items()))
@@ -67,7 +67,6 @@ def _plot_rirstat_addr_count_distribution(dt: datetime) -> None:
     plt.legend()
 
     plt.tight_layout()
-    plt.show()
 
 def _plot_rirstat_addr_count_distribution_full():
     rirstats = get_rir_asstats_all()
@@ -77,20 +76,19 @@ def _plot_rirstat_addr_count_distribution_full():
     plt.xlabel('$log_2(\\text{Address Count})$')
     plt.ylabel('CDF')
 
-    plt.ecdf([
-        rirstats[asn]['addr_count_v4_log_2'] for asn in all_asns
-    ], label='IPv4')
-    plt.ecdf([
-        rirstats[asn]['addr_count_v6_log_2'] for asn in all_asns
-    ], label='IPv6')
+    data_v4 = [ rirstats[asn]['addr_count_v4_log_2'] for asn in all_asns ]
+    data_v6 = [ rirstats[asn]['addr_count_v6_log_2'] for asn in all_asns ]
+
+    print(data_v4.count(0), data_v4.count(1), data_v4.count(2))
+
+    plt.ecdf(data_v4, label='IPv4')
+    plt.ecdf(data_v6, label='IPv6')
     plt.legend(loc='lower right')
 
     plt.tight_layout()
-    plt.show()
 
 
 if __name__ == '__main__':
-    dt = datetime.fromisoformat('2023-05-01T00:00')
-
-    _plot_rirstat_addr_count_distribution(dt)
-    # _plot_rirstat_addr_count_distribution_full()
+    _plot_rirstat_addr_count_distribution()
+    _plot_rirstat_addr_count_distribution_full()
+    plt.show()

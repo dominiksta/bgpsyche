@@ -37,7 +37,8 @@ LINK_FEATURE_VECTOR_NAMES: t.List[str] = [
     'rel_c2p',
     'rel_unknown',
     'distance_km',
-    # 'trade_service_volume_million_usd',
+    'trade_factor',
+    'confidence_from_seen_count',
 ]
 
 _one_hot_rels = one_hot(['p2p', 'c2p', 'p2c'], optional=True)
@@ -51,7 +52,8 @@ def vectorize_link_features(features: LinkFeatures) -> t.List[t.Union[int, float
             val_min=0, val_max=40_075, # earth circumference
         ),
 
-        # features['trade_service_volume_million_usd'],
+        features['trade_factor'],
+        features['confidence_from_seen_count'],
     ]
 
 AS_FEATURE_VECTOR_NAMES: t.List[str] = [
@@ -59,6 +61,7 @@ AS_FEATURE_VECTOR_NAMES: t.List[str] = [
     'rirstat_born',
     'rirstat_addr_count_v4',
     'rirstat_addr_count_v6',
+    'distance_from_path_beginning_km',
     'category_unknown',
     'category_transit_access',
     'category_content',
@@ -103,7 +106,15 @@ def vectorize_as_features(features: ASFeaturesRaw) -> t.List[t.Union[int, float]
             val_min=0, val_max=64,
         ),
 
-        *_one_hot_as_category(features['as_category']),
+        scale_zero_to_one_linear(
+            features['distance_from_path_beginning_km'],
+            val_min=0, val_max=40_075, # earth circumference
+        ),
+
+        *_one_hot_as_category(
+            'Unknown' if features['as_category'] == 'Route Collector'
+            else features['as_category'],
+        ),
 
         scale_zero_to_one_linear(
             features['country_democracy_index'] or democracy_index_avg(),

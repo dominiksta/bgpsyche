@@ -52,3 +52,8 @@ def longest_real_snippet(path: t.List[int]) -> t.List[int]:
         if s and len(subpath) > len(max_path): max_path = subpath
 
     return max_path
+
+
+def longest_real_snippet_len(path: t.List[int]) -> int:
+    l = len(longest_real_snippet(path))
+    return l - 1 if l != 0 else 0

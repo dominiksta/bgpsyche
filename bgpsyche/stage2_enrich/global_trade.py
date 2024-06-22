@@ -224,4 +224,26 @@ def get_trade_relationships() -> GlobalServicesTrade:
     with open(_DATA_FILE) as f: return json.loads(f.read())
 
 
+def get_normalized_trade_relationship(
+        c1: Alpha2Official,
+        c2: Alpha2Official,
+) -> float: # [0;1]
+    trade = get_trade_relationships()
+    ret = 0.
+    for direction in ['imports', 'exports']:
+        if c1 in trade[direction] and c2 in trade[direction][c1]:
+            assert c1 in trade[f'{direction}_total']
+            if trade[f'{direction}_total'][c1] == 0: continue
+            # HACK: no idea why this would be negative, but its only a small
+            # handful of edge-cases
+            if trade[direction][c1][c2] < 0: continue
+            ret += round(
+                trade[direction][c1][c2] / trade[f'{direction}_total'][c1], 2
+            )
+
+    ret = ret / 2
+    assert ret >= 0 and ret <= 1, { 'ret': ret, 'c1': c1, 'c2': c2 }
+    return ret
+
+
 if __name__ == '__main__': _update_wto_services_annual()

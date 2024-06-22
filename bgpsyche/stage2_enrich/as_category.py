@@ -82,13 +82,26 @@ _FROM_ASDB: t.Dict[
     'Computer and IT - Unknown': 'Unknown',
 }
 
+# def get_as_category(asn: int) -> ASCategory:
+#     pdb_entry = peeringdb.Client.get_network_by_asn(asn)
+#     # if pdb_entry: print(asn, pdb_entry.info_type)
+#     assert pdb_entry is None or pdb_entry.info_type != '', \
+#         { 'asn': asn, 'pdb_entry': pdb_entry.__dict__ }
+#     cat = _FROM_PEERINGDB[pdb_entry.info_type] \
+#         if pdb_entry is not None else _FROM_ASDB[get_asdb_primary(asn)]
+#     assert cat in AS_CATEGORY
+#     return cat
+
 def get_as_category(asn: int) -> ASCategory:
     pdb_entry = peeringdb.Client.get_network_by_asn(asn)
-    # if pdb_entry: print(asn, pdb_entry.info_type)
     assert pdb_entry is None or pdb_entry.info_type != '', \
         { 'asn': asn, 'pdb_entry': pdb_entry.__dict__ }
-    cat = _FROM_PEERINGDB[pdb_entry.info_type] \
-        if pdb_entry is not None else _FROM_ASDB[get_asdb_primary(asn)]
+
+    if pdb_entry and pdb_entry.info_type != 'Not Disclosed':
+        cat = _FROM_PEERINGDB[pdb_entry.info_type]
+    else:
+        cat = _FROM_ASDB[get_asdb_primary(asn)]
+
     assert cat in AS_CATEGORY
     return cat
 

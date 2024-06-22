@@ -1,5 +1,7 @@
+from collections import defaultdict
 from datetime import datetime
 from functools import lru_cache
+from itertools import pairwise
 import logging
 import typing as t
 
@@ -11,32 +13,116 @@ from bgpsyche.service.ext import ripe_ris
 logging_setup()
 _LOG = logging.getLogger(__name__)
 
-_Src2Dst2Count = t.Dict[int, t.Dict[int, int]]
+_LinkSeenCount = t.Dict[int, t.Dict[int, int]]
 
 # we could do prefix destinations in the future, but lets start with asns
-BGPMarkovChainsPerDest = t.Dict[int, _Src2Dst2Count]
+_LinkSeenCountPerDest = t.Dict[int, _LinkSeenCount]
 
 
 def bgp_markov_chains_from_mrt_dumps(
         as_paths_with_count: t.Iterator[ASPathMeta],
-) -> BGPMarkovChainsPerDest:
-    ret: BGPMarkovChainsPerDest = {}
+) -> t.Tuple[_LinkSeenCount, _LinkSeenCountPerDest]:
+    per_dest: _LinkSeenCountPerDest = {}
+    full: _LinkSeenCount = {}
+    dbg_all_links: t.Set[t.Tuple[int, int]] = set()
 
     for meta in as_paths_with_count:
         dst_asn = meta['path'][-1]
+        for as1, as2 in pairwise(meta['path']): dbg_all_links.add((as1, as2))
+
         for i in range(len(meta['path']) - 1):
             src, dst = meta['path'][i], meta['path'][i+1]
-            if dst_asn not in ret: ret[dst_asn] = {}
-            if src not in ret[dst_asn]: ret[dst_asn][src] = {}
-            if dst not in ret[dst_asn][src]: ret[dst_asn][src][dst] = 0
-            ret[dst_asn][src][dst] += meta['count']
 
-    return ret
+            if src not in full: full[src] = {}
+            if dst not in full[src]: full[src][dst] = 0
+            full[src][dst] += meta['count']
+
+            if dst not in full: full[dst] = {}
+            if src not in full[dst]: full[dst][src] = 0
+            full[dst][src] += meta['count']
+
+            if dst_asn not in per_dest: per_dest[dst_asn] = {}
+            if src not in per_dest[dst_asn]: per_dest[dst_asn][src] = {}
+            if dst not in per_dest[dst_asn][src]: per_dest[dst_asn][src][dst] = 0
+            per_dest[dst_asn][src][dst] += meta['count']
+
+    _LOG.info(
+        f'Created BGP markov chain with {len(full)} ASes ' +
+        f'and {len(dbg_all_links)} links'
+    )
+
+    return full, per_dest
+
+
+def get_link_confidence_from_link_counts(
+        dst: int,
+        link_counts_at_src: t.Dict[int, int],
+) -> float: # [-1;1]
+    """Compute a confidence value from -1 to 1 for a given AS pair.
+
+    A confidence value of ...
+    - ... 1 encodes high certainty that the link is correct.
+    - ... 0 encodes unsure or no opinion.
+    - ...-1 encodes high certainty that the link is not correct.
+    """
+    if len(link_counts_at_src.keys()) == 0: return 0
+
+    CONFIDENCE_MIN = 5
+
+    counts_sum = sum(link_counts_at_src.values())
+    base_prob = 1 / len(link_counts_at_src.keys())
+
+    # probability of link [0;1]
+    prob = (
+        (link_counts_at_src[dst] / counts_sum)
+        if dst in link_counts_at_src else 0
+    )
+
+    delta = prob - base_prob
+
+    # scale delta to [-1;1] using base_prob
+    if base_prob == 1:
+        direction = 1
+    else:
+        direction = (
+            delta * (1 / base_prob)
+            if delta < 0
+            else delta * (1 / (1 - base_prob))
+        )
+
+    # [0;1]: if we have less then N links to compute prob from, this number goes
+    # to 0
+    counts_confidence = \
+        min(counts_sum, CONFIDENCE_MIN) / CONFIDENCE_MIN
+
+    return round(direction * counts_confidence, 2) # [-1;1]
+
+
+def get_link_confidence(
+        src: int, dst: int,
+        count_full: _LinkSeenCount, count_per_dest: _LinkSeenCountPerDest
+) -> float:
+    """
+    Delegate to `get_link_confidence_from_link_counts`. Uses full counts only if
+    per destination counts are not available.
+    """
+    # if dst in count_per_dest and src in count_per_dest[dst]:
+    #     return get_link_confidence_from_link_counts(dst, count_per_dest[dst][src])
+    # else:
+    if src in count_full:
+        return get_link_confidence_from_link_counts(dst, count_full[src])
+    else:
+        return 0
+    # if dst in count_per_dest and src in count_per_dest[dst]:
+    #     return get_link_confidence_from_link_counts(dst, count_per_dest[dst][src])
+    # else:
+    #     return 0
 
 
 def get_as_path_confidence(
         as_path: t.List[int],
-        chains: BGPMarkovChainsPerDest,
+        count_full: _LinkSeenCount,
+        count_per_dest: _LinkSeenCountPerDest,
 ) -> float:
     """Compute a confidence value from -1 to 1 for a given AS path.
 
@@ -45,11 +131,12 @@ def get_as_path_confidence(
     - ... 0 encodes unsure or no opinion.
     - ...-1 encodes high certainty that the path is not correct.
     """
-    if as_path[-1] not in chains:
-        _LOG.warning(f'No chain for destination: {as_path}')
-        return 0
+    if as_path[-1] not in count_per_dest:
+        _LOG.warning(f'No chain for destination AS{as_path}, using full chain')
+        chain = count_full
+    else:
+        chain = count_per_dest[as_path[-1]]
 
-    chain = chains[as_path[-1]]
     confidence_path: t.List[float] = []
     confidence_path_str: str = ''
 
@@ -61,14 +148,7 @@ def get_as_path_confidence(
            dst not in chain[src]:
             _LOG.debug(f'Missing in markov chain: {(src, dst)}')
         else:
-            counts_sum = sum(chain[src].values())
-            prob = chain[src][dst] / counts_sum
-            direction = (prob - 0.5) * 2 # [-1;1]
-            confidence_min = 5
-            counts_confidence = min(counts_sum, confidence_min) \
-                / confidence_min # [0;1]
-            confidence = round(direction * counts_confidence, 2) # [-1;1]
-            # print(counts_sum, prob, direction, counts_confidence, confidence)
+            confidence = get_link_confidence_from_link_counts(dst, chain[src])
 
         confidence_path.append(confidence)
         confidence_path_str += f'{src} -{confidence}- '
@@ -86,7 +166,7 @@ def get_as_path_confidence(
 @lru_cache()
 def markov_chain_from_ripe_ris(
         dt: datetime
-) -> BGPMarkovChainsPerDest:
+) -> t.Tuple[_LinkSeenCount, _LinkSeenCountPerDest]:
     cache = PickleFileCache(
         f'bgp_markov_chain_ris_{dt.strftime("%Y%m%d.%H%M")}',
         lambda: bgp_markov_chains_from_mrt_dumps(ripe_ris.iter_paths(
@@ -99,10 +179,11 @@ def markov_chain_from_ripe_ris(
 
 
 def _test_ris(path: t.List[int]):
-    chain = markov_chain_from_ripe_ris(datetime.fromisoformat('2023-05-01T00:00'))
+    full, per_dest = \
+        markov_chain_from_ripe_ris(datetime.fromisoformat('2023-05-01T00:00'))
 
     # print(pformat(chain[path[-1]][19151]))
-    print(get_as_path_confidence(path, chain))
+    print(get_as_path_confidence(path, full, per_dest))
 
 
 if __name__ == '__main__':
