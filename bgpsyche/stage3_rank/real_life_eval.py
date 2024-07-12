@@ -248,6 +248,7 @@ def real_life_eval_model():
                         'percent_skipped': percent_skipped,
                         'position': mean(found_positions),
                         'in_first_percent': mean(found_in_first_n_percent),
+                        'edit_distance': mean(edit_distances),
                 }.items():
                     tsw.add_scalar(f'eval_real/{subtag}', value, iter)
 

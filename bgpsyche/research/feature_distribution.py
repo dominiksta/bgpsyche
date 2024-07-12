@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
-from bgpsyche.service.bgp_markov_chain import get_link_confidence, get_link_confidence_from_link_counts, markov_chain_from_ripe_ris
+from bgpsyche.service.bgp_markov_chain import get_as_path_confidence, get_link_confidence, get_link_confidence_from_link_counts, markov_chain_from_ripe_ris
 from bgpsyche.service.bgp_path_snippet_length import longest_real_snippet_len
 from bgpsyche.service.ext import peeringdb, ripe_ris
 from bgpsyche.service.ext.asdb import NAICSLITE_SELECTION, get_asdb_full, get_asdb_primary
@@ -108,6 +108,21 @@ def _plot_link_trade_volume():
     plt.ylabel('CDF')
     plt.xlabel('Trade Volume,\n Normalized by Total Imports/Exports')
     plt.ecdf(data)
+    plt.tight_layout()
+    plt.show()
+
+def _plot_path_confidence():
+    dt = date.fromisoformat('2023-05-01')
+
+    data = [
+        get_as_path_confidence(path, *markov_chain_from_ripe_ris(dt))
+        for path in tqdm(_ris_paths())
+    ]
+
+    plt.figure('feature_path_confidence_dist', figsize=(3.5, 3))
+    plt.ecdf(data)
+    plt.xlabel('Confidence')
+    plt.ylabel('CDF')
     plt.tight_layout()
     plt.show()
 
@@ -330,10 +345,11 @@ def _research_feature_distribution():
     # _plot_category_distribution()
     # _plot_democracy_index()
     # _plot_born_date()
-    _plot_longest_real_snippet()
+    # _plot_longest_real_snippet()
     # _plot_path_length()
     # _plot_link_trade_volume()
     # _plot_link_confidence()
+    _plot_path_confidence()
     # _plot_distance_from_source_km()
 
 

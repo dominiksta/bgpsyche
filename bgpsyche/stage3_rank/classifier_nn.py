@@ -235,6 +235,7 @@ def _load_dataset() -> _Dataset:
 
     dataset = make_dataset()
     _LOG.info('Dataset construction finished, now loading as tensors...')
+    _LOG.info(f'Dataset length: {len(dataset)}')
 
     random.shuffle(dataset)
 
