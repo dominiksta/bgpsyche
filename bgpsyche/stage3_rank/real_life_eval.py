@@ -31,6 +31,8 @@ _CANDIDATE_CACHE = PathCandidateCache('real')
 
 _CANDIDATES_USE_FIRST_N = 1000
 
+_STOP_AFTER = 1_000
+
 # choose prediction function
 # ----------------------------------------------------------------------
 
@@ -49,8 +51,10 @@ _is_vf = lambda p: int(not path_is_valley_free(
 ))
 
 # def _predict_fun_shortest(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
-#     s = sorted(paths, key=len)
-#     return _dist_from_ordered_list(paths, s)
+#     _paths = paths.copy()
+#     random.shuffle(_paths)
+#     s = sorted(_paths, key=len)
+#     return _dist_from_ordered_list(_paths, s)
 # _PREDICT_FUN: _PredictFun = _predict_fun_shortest
 
 # def _predict_fun_shuffle(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
@@ -64,12 +68,12 @@ _is_vf = lambda p: int(not path_is_valley_free(
 #     return _dist_from_ordered_list(paths, s)
 # _PREDICT_FUN: _PredictFun = _predict_fun_shortest_vf
 
-# def _predict_fun_vf_shortest(paths: t.List[t.List[int]]) -> t.List[float]:
+# def _predict_fun_vf_shortest(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
 #     is_vf = lambda p: int(not path_is_valley_free(
 #         get_caida_asrel(date.fromisoformat('2023-05-01')), p
 #     ))
 #     s = sorted(paths, key=lambda p: (is_vf(p), len(p)))
-#     return _dist_from_ordered_list(s)
+#     return _dist_from_ordered_list(paths, s)
 
 # _PREDICT_FUN: _PredictFun = _predict_fun_vf_shortest
 
@@ -165,6 +169,10 @@ def real_life_eval_model():
             chunksize=_WORKER_CHUNKSIZE
         ):
             iter += 1
+            if iter >= _STOP_AFTER:
+                _LOG.warn(f'Stopping after {_STOP_AFTER} iterations')
+                break
+
             path = w_resp['path']
 
             if path not in w_resp['candidates']:

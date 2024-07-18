@@ -138,7 +138,7 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
         pos_weight=torch.tensor([5], device=_device)
     )
 
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=0.01)
 
     # add code to tensorboard for reference
     # ----------------------------------------------------------------------
@@ -298,7 +298,7 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             ft_vec[1],  # rirstat_born
             ft_vec[2],  # rirstat_addr_count_v4
             ft_vec[3],  # rirstat_addr_count_v6
-            # ft_vec[4],  # distance_from_path_beginning_km
+            ft_vec[4],  # distance_from_path_beginning_km
             ft_vec[5],  # category_unknown
             ft_vec[6],  # category_transit_access
             ft_vec[7],  # category_content
@@ -321,7 +321,7 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             ft_vec[2], # rel_c2p
             ft_vec[3], # rel_unknown
             ft_vec[4], # distance_km
-            # ft_vec[5], # trade_factor
+            ft_vec[5], # trade_factor
             # ft_vec[6], # confidence_from_seen_count
             # 0,
         ] for ft_vec in el['link_features']
