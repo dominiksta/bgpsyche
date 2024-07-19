@@ -232,7 +232,7 @@ def _plot_link_feature_correlation(dataset: t.List[DatasetEl]):
 
     _plot_correlations(
         _compute_correlations(link_feature_types, link_features),
-        'feature_correlation_link_full', figsize=(6.5, 5)
+        'feature_correlation_link_full', figsize=(6.5, 4)
     )
 
 

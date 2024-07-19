@@ -17,7 +17,7 @@ from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
 from bgpsyche.util.bgp.valley_free import path_is_valley_free
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.stage3_rank import classifier_rnn, classifier, classifier_nn
-from bgpsyche.service.ext import routeviews
+from bgpsyche.service.ext import routeviews, mrt_custom
 from bgpsyche.stage3_rank.path_candidate_cache import PathCandidateCache
 from bgpsyche.util.multiprocessing import worker_amount
 from bgpsyche.stage3_rank.tensorboard import tensorboard_writer as tsw
@@ -134,7 +134,8 @@ def _load_test_paths() -> t.List[t.List[int]]:
     def _load():
         paths = [
             meta['path'] for meta in
-            # mrt_custom.iter_paths('mrt_dtag', eliminate_path_prepending=True,)
+            # mrt_custom.iter_paths('mrt_ntt', eliminate_path_prepending=True,)
+            # mrt_custom.iter_paths('mrt_cogent', eliminate_path_prepending=True,)
             routeviews.iter_paths(
                 datetime.fromisoformat('2023-05-01T00:00'),
                 eliminate_path_prepending=True,
@@ -170,7 +171,7 @@ def real_life_eval_model():
         ):
             iter += 1
             if iter >= _STOP_AFTER:
-                _LOG.warn(f'Stopping after {_STOP_AFTER} iterations')
+                _LOG.warning(f'Stopping after {_STOP_AFTER} iterations')
                 break
 
             path = w_resp['path']

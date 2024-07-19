@@ -72,6 +72,7 @@ def _plot_longest_real_snippet():
     data = [
         longest_real_snippet_len(el['path'])
         for el in cancel_iter(tqdm(dataset))
+        if el['real']
     ]
     plt.figure('feature_real_snippet_length_dist', figsize=(3.5, 3))
     plt.xlabel('Real Snippet Length')
@@ -345,11 +346,11 @@ def _research_feature_distribution():
     # _plot_category_distribution()
     # _plot_democracy_index()
     # _plot_born_date()
-    # _plot_longest_real_snippet()
+    _plot_longest_real_snippet()
     # _plot_path_length()
     # _plot_link_trade_volume()
     # _plot_link_confidence()
-    _plot_path_confidence()
+    # _plot_path_confidence()
     # _plot_distance_from_source_km()
 
 
