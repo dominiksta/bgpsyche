@@ -13,11 +13,13 @@ PATH_FEATURE_VECTOR_NAMES: t.List[str] = [
     'length',
     'is_valley_free',
     'longest_real_snippet',
-    'per_dest_markov_confidence',
+    'confidence_per_dest',
+    'confidence_full',
 ]
 
 def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float]]:
-    assert -1 <= features['per_dest_markov_confidence'] <= 1
+    assert -1 <= features['confidence_full'] <= 1, features
+    assert -1 <= features['confidence_per_dest'] <= 1, features
 
     return [
         scale_zero_to_one_linear(features['length'], val_min=0, val_max=10),
@@ -28,7 +30,8 @@ def vectorize_path_features(features: PathFeatures) -> t.List[t.Union[int, float
             features['longest_real_snippet'], val_min=0, val_max=10
         ),
 
-        features['per_dest_markov_confidence'],
+        features['confidence_per_dest'],
+        features['confidence_full'],
     ]
 
 LINK_FEATURE_VECTOR_NAMES: t.List[str] = [
@@ -38,7 +41,8 @@ LINK_FEATURE_VECTOR_NAMES: t.List[str] = [
     'rel_unknown',
     'distance_km',
     'trade_factor',
-    'confidence_from_seen_count',
+    'confidence_per_dest',
+    'confidence_full',
 ]
 
 _one_hot_rels = one_hot(['p2p', 'c2p', 'p2c'], optional=True)
@@ -53,7 +57,8 @@ def vectorize_link_features(features: LinkFeatures) -> t.List[t.Union[int, float
         ),
 
         features['trade_factor'],
-        features['confidence_from_seen_count'],
+        features['confidence_per_dest'],
+        features['confidence_full'],
     ]
 
 AS_FEATURE_VECTOR_NAMES: t.List[str] = [

@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 from bgpsyche.caching.pickle import PickleFileCache
 from bgpsyche.logging_config import logging_setup
-from bgpsyche.service.bgp_markov_chain import get_as_path_confidence, get_link_confidence, get_link_confidence_from_link_counts, markov_chain_from_ripe_ris
+from bgpsyche.service.bgp_markov_chain import get_as_path_confidence, get_link_confidence, markov_chain_from_ripe_ris
 from bgpsyche.service.bgp_path_snippet_length import longest_real_snippet_len
 from bgpsyche.service.ext import peeringdb, ripe_ris
 from bgpsyche.service.ext.asdb import NAICSLITE_SELECTION, get_asdb_full, get_asdb_primary
@@ -112,15 +112,26 @@ def _plot_link_trade_volume():
     plt.tight_layout()
     plt.show()
 
-def _plot_path_confidence():
+def _plot_path_confidence(
+        scope: t.Literal['full', 'per_dest']
+):
     dt = date.fromisoformat('2023-05-01')
+    counts_full, counts_per_dest = markov_chain_from_ripe_ris(dt)
 
     data = [
-        get_as_path_confidence(path, *markov_chain_from_ripe_ris(dt))
+        get_as_path_confidence(
+            path,
+            (
+                counts_full
+                if scope == 'full'
+                else counts_per_dest[path[-1]]
+            )
+        )
         for path in tqdm(_ris_paths())
+        if scope == 'full' or path[-1] in counts_per_dest
     ]
 
-    plt.figure('feature_path_confidence_dist', figsize=(3.5, 3))
+    plt.figure(f'feature_path_confidence_{scope}_dist', figsize=(3.5, 3))
     plt.ecdf(data)
     plt.xlabel('Confidence')
     plt.ylabel('CDF')
@@ -128,21 +139,34 @@ def _plot_path_confidence():
     plt.show()
 
 
-def _plot_link_confidence():
+def _plot_link_confidence(
+        scope: t.Literal['full', 'per_dest']
+):
     g = as_graph_ris.get()
     links = set(g.edges)
     print(len(links))
 
-
     dt = date.fromisoformat('2023-05-01')
 
-    count_full, count_per_dest = markov_chain_from_ripe_ris(dt)
+    counts_full, counts_per_dest = markov_chain_from_ripe_ris(dt)
 
     data = [
-        get_link_confidence(source, sink, count_full, count_per_dest)
+        get_link_confidence(
+            sink, (
+                counts_full[source]
+                if scope == 'full'
+                else counts_per_dest[sink][source]
+            )
+        )
         # (count_full[source][sink] / sum(count_full[source].values()))
-        for source, sink in links
+        for source, sink in tqdm(links)
         # if len(g[source]) > 10
+        if (
+                (scope == 'full' and source in counts_full) or
+                (scope == 'per_dest'
+                 and sink in counts_per_dest
+                 and source in counts_per_dest[sink])
+        )
     ]
 
     print(len(data))
@@ -153,19 +177,19 @@ def _plot_link_confidence():
     _LOG.info(f'tail length: {round(len(tail) / len(links_per_as), 5)}')
     _LOG.info(f'tail influence: {round(sum(tail) / sum(links_per_as), 5)}')
 
-    plt.figure('feature_link_confidence_links_per_as_full', figsize=(4.5, 4))
+    plt.figure(f'feature_link_confidence_{scope}_links_per_as_full', figsize=(4.5, 4))
     plt.hist([ math.log(lpa, 10) for lpa in links_per_as ])
     plt.xlabel('Links in Graph ($log_{10}$)')
     plt.ylabel('Amount of ASes')
     plt.tight_layout()
 
-    plt.figure('feature_link_confidence_links_per_as_tail', figsize=(4.5, 4))
+    plt.figure(f'feature_link_confidence_{scope}_links_per_as_tail', figsize=(4.5, 4))
     plt.hist([ math.log(lpa, 10) for lpa in tail ])
     plt.xlabel('Links in Graph ($log_{10}$)')
     plt.ylabel('Amount of ASes')
     plt.tight_layout()
 
-    plt.figure('feature_link_confidence_dist', figsize=(4.5, 4))
+    plt.figure(f'feature_link_confidence_{scope}_dist', figsize=(4.5, 4))
     plt.xlabel('Link Confidence')
     plt.ylabel('Amount of Links')
     plt.hist(data, bins=31)
@@ -346,10 +370,11 @@ def _research_feature_distribution():
     # _plot_category_distribution()
     # _plot_democracy_index()
     # _plot_born_date()
-    _plot_longest_real_snippet()
+    # _plot_longest_real_snippet()
     # _plot_path_length()
     # _plot_link_trade_volume()
-    # _plot_link_confidence()
+    _plot_link_confidence('full')
+    # _plot_link_confidence('per_dest')
     # _plot_path_confidence()
     # _plot_distance_from_source_km()
 

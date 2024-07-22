@@ -322,7 +322,8 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
             ft_vec[3], # rel_unknown
             ft_vec[4], # distance_km
             ft_vec[5], # trade_factor
-            # ft_vec[6], # confidence_from_seen_count
+            # ft_vec[6], # confidence_per_dest
+            # ft_vec[7], # confidence_full
             # 0,
         ] for ft_vec in el['link_features']
     ]
@@ -330,7 +331,8 @@ def _dataset_transform_pick_features(el: _DatasetElInput):
         el['path_features'][0], # length
         # el['path_features'][1], # is_valley_free
         el['path_features'][2], # longest_real_snippet
-        el['path_features'][3], # per_dest_markov_confidence
+        el['path_features'][3], # confidence_per_dest
+        el['path_features'][4], # confidence_full
         # 0,
     ]
 

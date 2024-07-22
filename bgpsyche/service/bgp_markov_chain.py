@@ -54,7 +54,7 @@ def bgp_markov_chains_from_mrt_dumps(
     return full, per_dest
 
 
-def get_link_confidence_from_link_counts(
+def get_link_confidence(
         dst: int,
         link_counts_at_src: t.Dict[int, int],
 ) -> float: # [-1;1]
@@ -98,31 +98,9 @@ def get_link_confidence_from_link_counts(
     return round(direction * counts_confidence, 2) # [-1;1]
 
 
-def get_link_confidence(
-        src: int, dst: int,
-        count_full: _LinkSeenCount, count_per_dest: _LinkSeenCountPerDest
-) -> float:
-    """
-    Delegate to `get_link_confidence_from_link_counts`. Uses full counts only if
-    per destination counts are not available.
-    """
-    # if dst in count_per_dest and src in count_per_dest[dst]:
-    #     return get_link_confidence_from_link_counts(dst, count_per_dest[dst][src])
-    # else:
-    if src in count_full:
-        return get_link_confidence_from_link_counts(dst, count_full[src])
-    else:
-        return 0
-    # if dst in count_per_dest and src in count_per_dest[dst]:
-    #     return get_link_confidence_from_link_counts(dst, count_per_dest[dst][src])
-    # else:
-    #     return 0
-
-
 def get_as_path_confidence(
         as_path: t.List[int],
-        count_full: _LinkSeenCount,
-        count_per_dest: _LinkSeenCountPerDest,
+        counts: _LinkSeenCount,
 ) -> float:
     """Compute a confidence value from -1 to 1 for a given AS path.
 
@@ -131,12 +109,6 @@ def get_as_path_confidence(
     - ... 0 encodes unsure or no opinion.
     - ...-1 encodes high certainty that the path is not correct.
     """
-    if as_path[-1] not in count_per_dest:
-        _LOG.warning(f'No chain for destination AS{as_path}, using full chain')
-        chain = count_full
-    else:
-        chain = count_per_dest[as_path[-1]]
-
     confidence_path: t.List[float] = []
     confidence_path_str: str = ''
 
@@ -144,11 +116,11 @@ def get_as_path_confidence(
         src, dst = as_path[i], as_path[i+1]
         confidence = 0
 
-        if src not in chain or \
-           dst not in chain[src]:
+        if src not in counts or \
+           dst not in counts[src]:
             _LOG.debug(f'Missing in markov chain: {(src, dst)}')
         else:
-            confidence = get_link_confidence_from_link_counts(dst, chain[src])
+            confidence = get_link_confidence(dst, counts[src])
 
         confidence_path.append(confidence)
         confidence_path_str += f'{src} -{confidence}- '
@@ -183,7 +155,7 @@ def _test_ris(path: t.List[int]):
         markov_chain_from_ripe_ris(datetime.fromisoformat('2023-05-01T00:00'))
 
     # print(pformat(chain[path[-1]][19151]))
-    print(get_as_path_confidence(path, full, per_dest))
+    print(get_as_path_confidence(path, full))
 
 
 if __name__ == '__main__':

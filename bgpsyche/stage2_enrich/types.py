@@ -9,7 +9,8 @@ class LinkFeatures(t.TypedDict):
     rel: t.Optional[RelationshipKind]
     distance_km: int
     trade_factor: float
-    confidence_from_seen_count: float # [-1;1]
+    confidence_full: float # [-1;1]
+    confidence_per_dest: float # [-1;1]
 
 
 class ASFeaturesRaw(t.TypedDict):
@@ -45,4 +46,5 @@ class PathFeatures(t.TypedDict):
 
     longest_real_snippet: int
 
-    per_dest_markov_confidence: float
+    confidence_per_dest: float
+    confidence_full: float

@@ -1,9 +1,9 @@
 from datetime import date, datetime
-from statistics import mean
 import typing as t
 
 from bgpsyche.service.bgp_markov_chain import (
-    get_as_path_confidence, get_link_confidence, get_link_confidence_from_link_counts, markov_chain_from_ripe_ris
+    get_as_path_confidence, get_link_confidence,
+    markov_chain_from_ripe_ris
 )
 from bgpsyche.service.bgp_path_snippet_length import longest_real_snippet_len
 from bgpsyche.service.ext.asrank import get_asrank_customer_cone_size
@@ -54,11 +54,17 @@ def enrich_link(source: int, sink: int) -> LinkFeatures:
     dt = date.fromisoformat('2023-05-01')
     rels = get_caida_asrel(dt)
     c1, c2 = get_ripe_as_country(source), get_ripe_as_country(sink)
+    counts_full, counts_per_dest = markov_chain_from_ripe_ris(dt)
 
     ret: LinkFeatures = {
         'rel':  rels[source][sink] if source in rels and sink in rels[source] else None,
-        'confidence_from_seen_count': get_link_confidence(
-            source, sink, *markov_chain_from_ripe_ris(dt)
+        'confidence_per_dest': (
+            get_link_confidence(sink, counts_per_dest[sink][source])
+            if (sink in counts_per_dest and source in counts_per_dest[sink]) else 0
+        ),
+        'confidence_full': (
+            get_link_confidence(sink, counts_full[source])
+            if source in counts_full else 0
         ),
         'distance_km': 0,
         'trade_factor': 0,
@@ -74,12 +80,15 @@ def enrich_link(source: int, sink: int) -> LinkFeatures:
 
 def enrich_path(path: t.List[int]) -> PathFeatures:
     dt = datetime.fromisoformat('2023-05-01T00:00')
+    counts_full, counts_per_dest = markov_chain_from_ripe_ris(dt)
 
     return {
         'length': len(path),
         'is_valley_free': path_is_valley_free(get_caida_asrel(dt), path),
         'longest_real_snippet': longest_real_snippet_len(path),
-        'per_dest_markov_confidence': get_as_path_confidence(
-            path, *markov_chain_from_ripe_ris(dt)
-        )
+        'confidence_per_dest': (
+            get_as_path_confidence(path, counts_per_dest[path[-1]])
+            if path[-1] in counts_per_dest else 0
+        ),
+        'confidence_full': get_as_path_confidence(path, counts_full),
     }
