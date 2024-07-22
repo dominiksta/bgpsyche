@@ -88,7 +88,6 @@ _CUSTOMER_CONE_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache()
-@bench_function
 def get_asrank_customer_cones_full(
         dt: date = date.fromisoformat('2023-05-01'),
 ) -> t.Dict[int, t.Set[int]]:

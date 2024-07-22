@@ -16,11 +16,11 @@ from bgpsyche.service.ext.caida_asrel import get_caida_asrel
 from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
 from bgpsyche.util.bgp.valley_free import path_is_valley_free
 from bgpsyche.caching.pickle import PickleFileCache
-from bgpsyche.stage3_rank import classifier_rnn, classifier, classifier_nn
+from bgpsyche.stage3_rank import classifier_nn
 from bgpsyche.service.ext import routeviews, mrt_custom
 from bgpsyche.stage3_rank.path_candidate_cache import PathCandidateCache
 from bgpsyche.util.multiprocessing import worker_amount
-from bgpsyche.stage3_rank.tensorboard import tensorboard_writer as tsw
+from bgpsyche.stage3_rank.tensorboard import tsw
 
 _LOG = logging.getLogger(__name__)
 
@@ -151,6 +151,9 @@ def _load_test_paths() -> t.List[t.List[int]]:
 
 
 def real_life_eval_model():
+    _PREDICT_FUN([[3320, 3320]]) # init all caches
+    _tsw = tsw()
+
     real_paths = _load_test_paths()
     found_positions: t.List[float] = []
     candidate_lengths: t.List[int] = []
@@ -219,17 +222,17 @@ def real_life_eval_model():
                 )
 
                 plt.hist(found_positions, bins=100, range=(0, 500))
-                tsw.add_figure('eval_real/pos', plt.gcf(), iter)
+                _tsw.add_figure('eval_real/pos', plt.gcf(), iter)
 
                 plt.ecdf(found_positions)
                 plt.xlim([0, 50])
-                tsw.add_figure('eval_real/pos_cdf_begin', plt.gcf(), iter)
+                _tsw.add_figure('eval_real/pos_cdf_begin', plt.gcf(), iter)
                 plt.ecdf(found_positions)
                 plt.xlim([0, 100])
-                tsw.add_figure('eval_real/pos_cdf_begin_100', plt.gcf(), iter)
+                _tsw.add_figure('eval_real/pos_cdf_begin_100', plt.gcf(), iter)
                 plt.ecdf(found_positions)
                 plt.xlim([0, 800])
-                tsw.add_figure('eval_real/pos_cdf_full', plt.gcf(), iter)
+                _tsw.add_figure('eval_real/pos_cdf_full', plt.gcf(), iter)
 
                 found_in_first_n_percent = [
                     round((found_positions[i] / candidate_lengths[i]) * 100)
@@ -238,14 +241,14 @@ def real_life_eval_model():
 
                 plt.ecdf(found_in_first_n_percent)
                 plt.xlim([0, 100])
-                tsw.add_figure('eval_real/pos_percent_cdf_100', plt.gcf(), iter)
+                _tsw.add_figure('eval_real/pos_percent_cdf_100', plt.gcf(), iter)
 
                 plt.ecdf(edit_distances)
                 plt.xlim([0, 10])
-                tsw.add_figure('eval_real/edit_distance_cdf', plt.gcf(), iter)
+                _tsw.add_figure('eval_real/edit_distance_cdf', plt.gcf(), iter)
                 plt.ecdf(len_diff)
                 plt.xlim([0, 10])
-                tsw.add_figure('eval_real/len_diff', plt.gcf(), iter)
+                _tsw.add_figure('eval_real/len_diff', plt.gcf(), iter)
 
                 # TODO: when an error happens, does it happen in the front,
                 # middle or end of the path?
@@ -259,12 +262,10 @@ def real_life_eval_model():
                         'in_first_percent': mean(found_in_first_n_percent),
                         'edit_distance': mean(edit_distances),
                 }.items():
-                    tsw.add_scalar(f'eval_real/{subtag}', value, iter)
+                    _tsw.add_scalar(f'eval_real/{subtag}', value, iter)
 
 
 def _main():
-    _PREDICT_FUN([[3320, 3320]])
-
     real_life_eval_model()
 
 if __name__ == '__main__': _main()

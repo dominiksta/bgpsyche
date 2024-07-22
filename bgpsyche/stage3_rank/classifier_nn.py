@@ -18,7 +18,7 @@ from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
 from bgpsyche.stage3_rank.vectorize_features import (
     vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
-from bgpsyche.stage3_rank.tensorboard import tensorboard_writer
+from bgpsyche.stage3_rank.tensorboard import tsw
 
 _LOG = logging.getLogger(__name__)
 
@@ -28,7 +28,6 @@ if torch.cuda.is_available: torch.cuda.manual_seed(_RANDOM_SEED)
 _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # _device = 'cpu'
 
-_tsb = tensorboard_writer.add_scalar
 _tens = lambda l: torch.tensor(l, dtype=torch.float32, device=_device)
 
 
@@ -122,6 +121,7 @@ class _Dataset(t.TypedDict):
 
 
 def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
+    tss = tsw().add_scalar
 
     # model initialization
     # ----------------------------------------------------------------------
@@ -145,7 +145,7 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
 
     def tsb_add_code_file(name: str, file: str):
         with open(f'{HERE}/{file}.py', 'r') as f:
-            tensorboard_writer.add_text(
+            tsw().add_text(
                 f'code/{name}', f'```\n{f.read()}\n```'
             )
 
@@ -218,15 +218,15 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
                 f'A: {acc_test:.3f}, P: {prec_test:.3f}, R: {rec_test:.3f}, ' +
                 f'F1: {f1_test:.3f}'
             )
-            _tsb('eval_synthetic_train/loss', loss, epoch)
-            _tsb('eval_synthetic_test/loss', loss_test, epoch)
-            _tsb('eval_synthetic_test/accuracy', acc_test, epoch)
-            _tsb('eval_synthetic_test/precision', prec_test, epoch)
-            _tsb('eval_synthetic_test/recall', rec_test, epoch)
-            _tsb('eval_synthetic_test/f1', f1_test, epoch)
+            tss('eval_synthetic_train/loss', loss, epoch)
+            tss('eval_synthetic_test/loss', loss_test, epoch)
+            tss('eval_synthetic_test/accuracy', acc_test, epoch)
+            tss('eval_synthetic_test/precision', prec_test, epoch)
+            tss('eval_synthetic_test/recall', rec_test, epoch)
+            tss('eval_synthetic_test/f1', f1_test, epoch)
         else:
             _LOG.info(f'Training Epoch: {epoch} | Loss: {loss:.5f}')
-            _tsb('eval_synthetic_train/loss', loss, epoch)
+            tss('eval_synthetic_train/loss', loss, epoch)
 
     return model.state_dict()
 

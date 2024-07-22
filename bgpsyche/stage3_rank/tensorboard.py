@@ -1,3 +1,4 @@
+import typing as t
 from datetime import datetime
 import logging
 
@@ -6,10 +7,19 @@ from bgpsyche.util.const import DATA_DIR
 
 _LOG = logging.getLogger(__name__)
 
-_tensorboard_dir = DATA_DIR / 'tensorboard'
-_name = input("Name run: ")
-_LOG.info(f'Tensorboard run named: {_name}')
-tensorboard_writer = SummaryWriter(
-    _tensorboard_dir /
-    f'{datetime.now().strftime("%m.%d_%H.%M.%S")}_{_name}'
-)
+_TENSORBOARD_DIR = DATA_DIR / 'tensorboard'
+
+_WRITER: t.Optional[SummaryWriter] = None
+
+def make_tensorboard_writer(name: str):
+    global _WRITER
+    _LOG.info(f'Creating tensorboard writer named: {name}')
+    _WRITER = SummaryWriter(
+        _TENSORBOARD_DIR /
+        f'{datetime.now().strftime("%m.%d_%H.%M.%S")}_{name}'
+    )
+
+def tsw() -> SummaryWriter:
+    global _WRITER
+    assert _WRITER is not None
+    return _WRITER

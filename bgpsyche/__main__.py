@@ -7,41 +7,46 @@ from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.ext import peeringdb
 from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.stage2_enrich.enrich import enrich_path
+from bgpsyche.stage3_rank.tensorboard import make_tensorboard_writer
 
 logging_setup()
 _LOG = logging.getLogger(__name__)
 
-_parser = argparse.ArgumentParser()
+def main():
+    parser = argparse.ArgumentParser()
 
-_parser.add_argument('action', choices=[
-    'test_stage1',
-    'test_stage2',
-    'tensorboard',
-    'peeringdb_sync',
-])
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
-_args = _parser.parse_args()
+    peeringdb_sync = subparsers.add_parser('peeringdb_sync')
+    tensorboard    = subparsers.add_parser('tensorboard')
 
-if _args.action == 'peeringdb_sync': peeringdb.Client.sync()
+    train_and_eval = subparsers.add_parser('train_and_eval')
+    train_and_eval.add_argument('name', help='Name (for Tensorboard)')
 
-elif _args.action == 'test_stage1':
-    # 23673 23764 4134 4538 23910 24371
-    candidates = get_path_candidates(23673, 24371)
-    print(len(candidates))
+    args = parser.parse_args()
 
+    _LOG.info(f'Started from main with command <<{args.command}>>')
+    _LOG.info(f'{args}')
 
-    # 14840 →  32098 ↘  13999 ↘ 265620
-    candidates = get_path_candidates(14840, 265620)
-    pprint(candidates[:10])
+    if args.command == 'peeringdb_sync':
+        peeringdb.Client.sync()
 
+    elif args.command == 'train_and_eval':
+        make_tensorboard_writer(args.name)
+        # HACK: this is kinda cursed, but we have to define the prediction
+        # function globally in the real_life_eval module, because pickling a
+        # function object and passing it to workers is not possible. but
+        # defining the prediction function requires training. there is probably
+        # a better way of doing this but this inline import works ok for now.
+        from bgpsyche.stage3_rank.real_life_eval import real_life_eval_model
+        real_life_eval_model()
 
-elif _args.action == 'test_stage2':
-    candidates = get_path_candidates(14840, 265620)
-    print(len(candidates))
+    elif args.command == 'tensorboard':
+        system(
+            'tensorboard ' +
+            '--bind_all ' +
+            '--load_fast=false ' +
+            '--logdir=./bgpsyche/data/tensorboard/'
+        )
 
-    for path in candidates[:50]:
-        pprint({ 'path': path, 'features': enrich_path(path) })
-
-
-elif _args.action == 'tensorboard':
-    system('tensorboard --bind_all --load_fast=false --logdir=./bgpsyche/data/tensorboard/')
+if __name__ == '__main__': main()
