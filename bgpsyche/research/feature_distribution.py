@@ -127,8 +127,9 @@ def _plot_path_confidence(
                 else counts_per_dest[path[-1]]
             )
         )
-        for path in tqdm(_ris_paths())
         if scope == 'full' or path[-1] in counts_per_dest
+        else 0
+        for path in tqdm(_ris_paths())
     ]
 
     plt.figure(f'feature_path_confidence_{scope}_dist', figsize=(3.5, 3))
@@ -373,9 +374,10 @@ def _research_feature_distribution():
     # _plot_longest_real_snippet()
     # _plot_path_length()
     # _plot_link_trade_volume()
-    _plot_link_confidence('full')
+    # _plot_link_confidence('full')
     # _plot_link_confidence('per_dest')
-    # _plot_path_confidence()
+    # _plot_path_confidence('full')
+    _plot_path_confidence('per_dest')
     # _plot_distance_from_source_km()
 
 

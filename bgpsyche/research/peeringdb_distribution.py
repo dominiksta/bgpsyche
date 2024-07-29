@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date
 import logging
 import typing as t
 import math
@@ -30,7 +31,9 @@ def _research_peeringdb_distribution():
     }
     _LOG.info(f'info_type set: {len(pdb_set)}')
 
-    all_asns = set(get_rir_asstats_all().keys()).union(pdb_asns)
+    all_asns = \
+        set(get_rir_asstats_all(dt=date.fromisoformat('2024-07-27')).keys())\
+        .union(pdb_asns)
     _LOG.info(f'all asn count: {len(all_asns)}')
 
     # bgpsyche_set = {

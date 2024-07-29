@@ -16,6 +16,7 @@ from bgpsyche.stage1_candidates.get_candidates import get_path_candidates
 from bgpsyche.stage2_enrich.enrich import enrich_asn, enrich_link, enrich_path
 from bgpsyche.stage3_rank.make_dataset import DatasetEl, make_dataset
 from bgpsyche.stage3_rank.vectorize_features import (
+    AS_FEATURE_VECTOR_NAMES, LINK_FEATURE_VECTOR_NAMES, PATH_FEATURE_VECTOR_NAMES,
     vectorize_as_features, vectorize_link_features, vectorize_path_features
 )
 from bgpsyche.stage3_rank.tensorboard import tsw
@@ -230,10 +231,16 @@ def train(dataset: _Dataset) -> t.Dict[str, t.Any]: # return state_dict
 
     return model.state_dict()
 
+def _load_dataset(use_dummy = False) -> _Dataset:
+    dummy_el: DatasetEl = {
+        'as_features': [[ 0 for _ in range(len(AS_FEATURE_VECTOR_NAMES)) ]] * 4,
+        'link_features': [[ 0 for _ in range(len(LINK_FEATURE_VECTOR_NAMES)) ]] * 3,
+        'path_features': [ 0 for _ in range(len(PATH_FEATURE_VECTOR_NAMES)) ],
+        'path': [0, 1, 2, 3],
+        'real': False,
+    }
 
-def _load_dataset() -> _Dataset:
-
-    dataset = make_dataset()
+    dataset = make_dataset() if not use_dummy else [dummy_el]
     _LOG.info('Dataset construction finished, now loading as tensors...')
     _LOG.info(f'Dataset length: {len(dataset)}')
 
@@ -341,7 +348,6 @@ _DATASET_RUNTIME_INPUT_TRANSFORMERS: t.List[_DatasetRuntimeInputTransformer] = [
     _dataset_transform_pick_features
 ]
 
-
 def _ready_model_default_train(
         retrain = False,
         device = 'cpu',
@@ -349,11 +355,13 @@ def _ready_model_default_train(
 
     file_path = DATA_DIR / 'models' / 'bgpsyche.pt'
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    dataset = _load_dataset()
+    dataset = _load_dataset(use_dummy=not retrain)
 
     if not file_path.exists():
         _LOG.info('Model not found on disk')
         retrain = True
+    else:
+        _LOG.info('Model found on disk')
 
     if retrain:
         _LOG.info('Initializing training')

@@ -1,13 +1,15 @@
 import argparse
 import logging
 from os import system
-from pprint import pprint
+from pprint import pformat, pprint
 
 from bgpsyche.logging_config import logging_setup
 from bgpsyche.service.ext import peeringdb
 from bgpsyche.stage1_candidates import get_path_candidates
 from bgpsyche.stage2_enrich.enrich import enrich_path
+from bgpsyche.stage3_rank.classifier_nn import make_prediction_function
 from bgpsyche.stage3_rank.tensorboard import make_tensorboard_writer
+from bgpsyche import http
 
 logging_setup()
 _LOG = logging.getLogger(__name__)
@@ -22,6 +24,9 @@ def main():
 
     train_and_eval = subparsers.add_parser('train_and_eval')
     train_and_eval.add_argument('name', help='Name (for Tensorboard)')
+
+    listen = subparsers.add_parser('listen', help='Listen over HTTP')
+    listen.add_argument('port', help='Local Port', type=int)
 
     args = parser.parse_args()
 
@@ -40,6 +45,10 @@ def main():
         # a better way of doing this but this inline import works ok for now.
         from bgpsyche.stage3_rank.real_life_eval import real_life_eval_model
         real_life_eval_model()
+
+    elif args.command == 'listen':
+        http.init()
+        http.flask_app.run(port=args.port)
 
     elif args.command == 'tensorboard':
         system(
