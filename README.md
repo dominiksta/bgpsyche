@@ -3,7 +3,7 @@ BGPsyche
 
 BGPsyche is a system to predict BGP paths between arbitrary autonomous systems
 (ASes) using deep learning. It was written as part of my (@dominiksta) [masters
-thesis](2024_Stahmer_BGPSyche.pdf). It should be considered a prototype
+thesis](2024_Stahmer_BGPsyche.pdf). It should be considered a prototype
 implementation, not a finished product. Nevertheless, running (and training)
 BGPsyche should be relatively straightforward and is outlined in this README.
 
@@ -58,7 +58,7 @@ re-running the same command will be much quicker and should not cause any issues
 
 BGPsyche offers a pre-trained model in the repository. This model was trained
 with what was found to be the ideal parameters and features in the
-[thesis](2024_Stahmer_BGPSyche.pdf). It was therefore called the "silver" model.
+[thesis](2024_Stahmer_BGPsyche.pdf). It was therefore called the "silver" model.
 
 Usage of a pre-trained model requires about 6 GB of RAM. Almost all of the
 memory is taken up by various datastructures, not the model itself. Running a
@@ -81,7 +81,7 @@ Training a model with default configuration (another "silver" model) takes about
 16GB of RAM and 16GB of VRAM. Please see `make_dataset.py` for adjusting the
 dataset size if necessary. In general, if you want to train your own model you
 probably want to read (or at least skim) the
-[thesis](2024_Stahmer_BGPSyche.pdf). The most relevant things to adjust are
+[thesis](2024_Stahmer_BGPsyche.pdf). The most relevant things to adjust are
 arguably in `vectorize_features.py`, `enrich.py`, `make_dataset.py` and
 `classifier_nn.py`.
 
