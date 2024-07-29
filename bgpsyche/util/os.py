@@ -10,12 +10,6 @@ def system(cmd: str):
     if ret != 0: raise ChildProcessError(ret)
 
 
-def current_git_version() -> str:
-    return subprocess.check_output(
-        ['git', 'rev-parse', 'HEAD']
-    ).decode().strip()
-
-
 class SystemMemory(t.TypedDict):
     total_mb: int
     used_mb: int

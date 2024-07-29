@@ -46,9 +46,9 @@ def _dist_from_ordered_list(
     return { str(path): 1 - sorted.index(path) / l for path in paths }
 
 
-_is_vf = lambda p: int(not path_is_valley_free(
-    get_caida_asrel(date.fromisoformat('2023-05-01')), p
-))
+# _is_vf = lambda p: int(not path_is_valley_free(
+#     get_caida_asrel(date.fromisoformat('2023-05-01')), p
+# ))
 
 # def _predict_fun_shortest(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
 #     _paths = paths.copy()
@@ -98,11 +98,6 @@ def _predict_fun_nn(paths: t.List[t.List[int]]) -> t.Dict[str, float]:
     return _dist_from_ordered_list(paths, s)
 
 _PREDICT_FUN: _PredictFun = _predict_fun_nn
-
-
-# _PREDICT_FUN: _PredictFun = classifier_rnn.predict_probs
-# _PREDICT_FUN: _PredictFun = classifier_nn.make_prediction_function()
-# _PREDICT_FUN: _PredictFun = classifier.predict_probs
 
 # ----------------------------------------------------------------------
 
